@@ -120,7 +120,7 @@ public struct TacticalMapView: View {
 
     // MARK: - Map Style
 
-    private var mapStyleForSettings: MapStyle {
+    private var mapStyleForSettings: _MapKit_SwiftUI.MapStyle {
         switch settingsVM.settings.mapStyle {
         case .satellite:
             return .imagery

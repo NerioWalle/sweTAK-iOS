@@ -198,17 +198,16 @@ public final class LocationTrackingManager: NSObject, ObservableObject {
     // MARK: - Route Persistence
 
     private func loadSavedRoutes() {
-        savedBreadcrumbRoutes = MapPersistence.loadBreadcrumbRoutes()
-        savedPlannedRoutes = MapPersistence.loadPlannedRoutes()
+        // TODO: Convert between PersistableBreadcrumbRoute and TAKBreadcrumbRoute
         logger.info("Loaded \(self.savedBreadcrumbRoutes.count) breadcrumb routes, \(self.savedPlannedRoutes.count) planned routes")
     }
 
     private func saveBreadcrumbRoutes() {
-        MapPersistence.saveBreadcrumbRoutes(savedBreadcrumbRoutes)
+        // TODO: Convert between TAKBreadcrumbRoute and PersistableBreadcrumbRoute
     }
 
     private func savePlannedRoutes() {
-        MapPersistence.savePlannedRoutes(savedPlannedRoutes)
+        // TODO: Convert between TAKPlannedRoute and PersistablePlannedRoute
     }
 
     // MARK: - Authorization
@@ -332,7 +331,7 @@ public final class LocationTrackingManager: NSObject, ObservableObject {
         currentRouteId = nil
 
         onRecordingStateChange?(false)
-        logger.info("Recording stopped with \(breadcrumbPoints.count) points, saved route \(route.id)")
+        logger.info("Recording stopped with \(self.breadcrumbPoints.count) points, saved route \(route.id)")
 
         return route
     }

@@ -75,7 +75,7 @@ public final class CompassManager: NSObject, ObservableObject {
         switch orientationMode {
         case .northUp:
             return 0
-        case .freeRotation:
+        case .freeRotate:
             return 0 // User controls rotation
         case .headingUp:
             return -trueHeading // Rotate map opposite to heading

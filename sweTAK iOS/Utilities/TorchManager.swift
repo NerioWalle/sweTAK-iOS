@@ -40,7 +40,7 @@ public final class TorchManager: ObservableObject {
         }
 
         // Check if variable intensity is supported
-        supportsTorchIntensity = device.isTorchModeSupported(.on) && device.maxAvailableTorchLevel > 0
+        supportsTorchIntensity = device.isTorchModeSupported(.on) && AVCaptureDevice.maxAvailableTorchLevel > 0
     }
 
     // MARK: - Public API

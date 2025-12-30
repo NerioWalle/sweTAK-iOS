@@ -230,6 +230,22 @@ public struct MedevacDetailScreen: View {
     }
 }
 
+// MARK: - Detail Row
+
+private struct DetailRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(value)
+        }
+    }
+}
+
 // MARK: - Preview
 
 #Preview("MEDEVAC Detail") {

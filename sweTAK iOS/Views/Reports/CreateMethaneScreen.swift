@@ -74,7 +74,7 @@ public struct CreateMethaneScreen: View {
         // Set default callsign from profile
         if let profile = contactsVM.myProfile {
             callsign = profile.callsign ?? ""
-            unit = profile.unit ?? ""
+            unit = profile.company ?? ""
         }
 
         // Set current time

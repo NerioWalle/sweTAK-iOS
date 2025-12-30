@@ -27,7 +27,7 @@ public enum MapProfileUtils {
         }
 
         // Check if it looks like a device ID or hex string
-        if looksLikeIdentifierHex(cleaned) {
+        if MapStringUtilities.looksLikeIdentifierHex(cleaned) {
             return nil
         }
 

@@ -376,7 +376,7 @@ public final class InMemoryChatRepository: ChatRepositoryProtocol, ObservableObj
             messagesSubject.send(messagesByThread)
         }
 
-        logger.info("Loaded \(threadMap.count) threads from storage")
+        logger.info("Loaded \(self.threadMap.count) threads from storage")
     }
 
     private func saveToStorage() {

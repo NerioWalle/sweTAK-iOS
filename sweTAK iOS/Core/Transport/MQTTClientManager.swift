@@ -514,7 +514,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             isRead: false
         )
 
-        logger.info("Order received: \(orderId) type=\(orderType)")
+        logger.info("Order received: \(orderId) type=\(orderType.rawValue)")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.orderListener?.onOrderReceived(order: order)
@@ -552,7 +552,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             timestampMillis: timestampMillis
         )
 
-        logger.debug("Order ACK received: \(orderId) type=\(ackType)")
+        logger.debug("Order ACK received: \(orderId) type=\(ackType.rawValue)")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.orderListener?.onOrderAckReceived(ack: ack)

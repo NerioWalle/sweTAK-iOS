@@ -137,24 +137,16 @@ private struct RecipientRow: View {
         availableRecipients: [
             ContactProfile(
                 deviceId: "device-1",
-                callsign: "Alpha-1",
                 nickname: "Team Leader",
-                latitude: 59.33,
-                longitude: 18.06
+                callsign: "Alpha-1"
             ),
             ContactProfile(
                 deviceId: "device-2",
-                callsign: "Bravo-2",
-                nickname: nil,
-                latitude: 59.34,
-                longitude: 18.07
+                callsign: "Bravo-2"
             ),
             ContactProfile(
                 deviceId: "device-3",
-                callsign: nil,
-                nickname: "Scout",
-                latitude: 59.35,
-                longitude: 18.08
+                nickname: "Scout"
             )
         ],
         selectedRecipientIds: .constant(Set(["device-1"])),

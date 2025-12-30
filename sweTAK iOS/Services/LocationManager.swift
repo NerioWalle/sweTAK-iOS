@@ -163,7 +163,7 @@ public final class LocationManager: NSObject, ObservableObject {
     public func stopRecordingBreadcrumbs() -> BreadcrumbRoute? {
         guard isRecordingBreadcrumbs else { return nil }
 
-        logger.info("Stopping breadcrumb recording with \(breadcrumbPoints.count) points")
+        logger.info("Stopping breadcrumb recording with \(self.breadcrumbPoints.count) points")
         isRecordingBreadcrumbs = false
 
         guard breadcrumbPoints.count >= 2 else {

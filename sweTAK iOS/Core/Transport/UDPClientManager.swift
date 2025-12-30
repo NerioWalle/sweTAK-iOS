@@ -745,8 +745,8 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
             "originDeviceId": pin.originDeviceId.isEmpty ? deviceId : pin.originDeviceId
         ]
 
-        if let photo = pin.photoBase64 {
-            json["photoBase64"] = photo
+        if let photo = pin.photoUri {
+            json["photoUri"] = photo
         }
 
         sendJSON(json)

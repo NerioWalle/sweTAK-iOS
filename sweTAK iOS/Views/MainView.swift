@@ -298,7 +298,7 @@ private struct LayerMenuView: View {
 
             Divider()
 
-            ForEach(MapStyle.allCases, id: \.self) { style in
+            ForEach(SettingsMapStyle.allCases, id: \.self) { style in
                 Button(action: {
                     settingsVM.setMapStyle(style)
                     dismiss()
@@ -320,7 +320,7 @@ private struct LayerMenuView: View {
                 }
                 .foregroundColor(.primary)
 
-                if style != MapStyle.allCases.last {
+                if style != SettingsMapStyle.allCases.last {
                     Divider()
                 }
             }
@@ -328,7 +328,7 @@ private struct LayerMenuView: View {
         .frame(width: 200)
     }
 
-    private func iconForStyle(_ style: MapStyle) -> String {
+    private func iconForStyle(_ style: SettingsMapStyle) -> String {
         switch style {
         case .satellite: return "globe"
         case .terrain: return "mountain.2"

@@ -143,12 +143,12 @@ public final class RoutesViewModel: ObservableObject {
     }
 
     /// Total distance of all breadcrumb routes in meters
-    public var totalBreadcrumbDistance: Float {
+    public var totalBreadcrumbDistance: Double {
         breadcrumbRoutes.reduce(0) { $0 + $1.totalDistanceMeters }
     }
 
     /// Total distance of all planned routes in meters
-    public var totalPlannedDistance: Float {
+    public var totalPlannedDistance: Double {
         plannedRoutes.reduce(0) { sum, route in
             sum + route.totalDistanceMeters
         }
@@ -237,33 +237,4 @@ private struct RouteExportData: Codable {
     let exportedAt: Date
 }
 
-// MARK: - PlannedRoute Extension
-
-extension PlannedRoute {
-    /// Calculate total distance in meters
-    public var totalDistanceMeters: Float {
-        guard waypoints.count >= 2 else { return 0 }
-
-        var total: Double = 0
-        for i in 0..<(waypoints.count - 1) {
-            let a = waypoints[i]
-            let b = waypoints[i + 1]
-            total += haversineDistance(
-                lat1: a.latitude, lon1: a.longitude,
-                lat2: b.latitude, lon2: b.longitude
-            )
-        }
-        return Float(total)
-    }
-
-    private func haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
-        let R = 6371000.0
-        let dLat = (lat2 - lat1) * .pi / 180
-        let dLon = (lon2 - lon1) * .pi / 180
-        let a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180) *
-                sin(dLon / 2) * sin(dLon / 2)
-        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return R * c
-    }
-}
+// Note: PlannedRoute.totalDistanceMeters is defined in LocationManager.swift

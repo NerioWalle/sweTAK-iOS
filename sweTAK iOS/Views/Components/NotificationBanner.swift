@@ -29,7 +29,7 @@ public final class NotificationBannerManager: ObservableObject {
     /// Show a chat notification banner
     public func showChatNotification(_ notification: IncomingChatNotification, onTap: @escaping () -> Void) {
         let banner = BannerNotification(
-            id: notification.id,
+            id: notification.threadId,
             type: .chat,
             title: notification.displayName,
             message: notification.textPreview,

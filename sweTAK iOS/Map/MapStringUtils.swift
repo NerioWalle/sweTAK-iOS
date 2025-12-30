@@ -173,7 +173,7 @@ public func nullIfLiteral(_ string: String?) -> String? {
 /// Normalize a nickname for display; hide IDs/UUID/base64-ish and blanks
 public func displayNickname(_ raw: String?) -> String {
     guard let cleaned = nullIfLiteral(raw),
-          !looksLikeIdentifierHex(cleaned),
+          !MapStringUtilities.looksLikeIdentifierHex(cleaned),
           !cleaned.isEmpty else {
         return "No nickname"
     }

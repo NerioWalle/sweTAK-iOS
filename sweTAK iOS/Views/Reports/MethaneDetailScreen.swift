@@ -242,6 +242,25 @@ private struct DetailRow: View {
     }
 }
 
+// MARK: - Section Header
+
+private struct SectionHeader: View {
+    let letter: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(letter)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(.red)
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.primary)
+        }
+    }
+}
+
 // MARK: - Casualty Badge
 
 private struct CasualtyBadge: View {

@@ -61,7 +61,7 @@ public enum TacDispatcher {
         title: String,
         description: String,
         createdAtMillis: Int64,
-        photoBase64: String? = nil
+        photoUri: String? = nil
     ) {
         let callsign = LocalProfileStore.shared.resolveCallsign()
 
@@ -69,14 +69,14 @@ public enum TacDispatcher {
 
         let pin = NatoPin(
             id: id,
-            type: NatoPinType(rawValue: natoType) ?? .friendlyUnit,
             latitude: latitude,
             longitude: longitude,
+            type: NatoType(rawValue: natoType) ?? .infantry,
             title: title,
             description: description,
             createdAtMillis: createdAtMillis,
             originDeviceId: deviceId,
-            photoBase64: photoBase64
+            photoUri: photoUri
         )
 
         TransportCoordinator.shared.publishPin(pin)

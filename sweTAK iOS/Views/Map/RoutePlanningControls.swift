@@ -117,8 +117,9 @@ public class RoutePlanningState: ObservableObject {
         guard waypoints.count >= 2 else { return nil }
 
         let route = PlannedRoute(
+            id: UUID().uuidString,
             name: name ?? "Route \(Date().formatted(date: .abbreviated, time: .shortened))",
-            waypoints: waypoints.map { RouteWaypoint(coordinate: $0) },
+            waypoints: waypoints.map { PlannedWaypoint(latitude: $0.latitude, longitude: $0.longitude) },
             createdAt: Date()
         )
 

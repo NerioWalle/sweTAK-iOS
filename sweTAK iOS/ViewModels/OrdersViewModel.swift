@@ -100,6 +100,7 @@ public final class OrdersViewModel: ObservableObject {
             OrderRecipientStatus(
                 orderId: order.id,
                 recipientDeviceId: recipientId,
+                recipientCallsign: ContactsViewModel.shared.contacts.first(where: { $0.deviceId == recipientId })?.callsign,
                 sentAtMillis: Date.currentMillis
             )
         }
@@ -246,6 +247,7 @@ public final class OrdersViewModel: ObservableObject {
             let newStatus = OrderRecipientStatus(
                 orderId: ack.orderId,
                 recipientDeviceId: ack.fromDeviceId,
+                recipientCallsign: ContactsViewModel.shared.contacts.first(where: { $0.deviceId == ack.fromDeviceId })?.callsign,
                 sentAtMillis: Date.currentMillis,
                 deliveredAtMillis: ack.ackType == .delivered ? ack.timestampMillis : nil,
                 readAtMillis: ack.ackType == .read ? ack.timestampMillis : nil

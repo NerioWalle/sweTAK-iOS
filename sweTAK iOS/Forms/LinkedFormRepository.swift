@@ -313,7 +313,7 @@ public final class LinkedFormRepository: ObservableObject {
 
         forms = decoded
         updateGroupedForms()
-        Self.logger.info("Loaded \(forms.count) linked forms")
+        Self.logger.info("Loaded \(self.forms.count) linked forms")
     }
 
     /// Save forms to UserDefaults

@@ -14,7 +14,7 @@ public struct PinAddEvent: Equatable {
     public let description: String
     public let createdAtMillis: Int64
     public let originDeviceId: String
-    public let photoBase64: String?
+    public let photoUri: String?
 
     public init(
         id: Int64,
@@ -25,7 +25,7 @@ public struct PinAddEvent: Equatable {
         description: String,
         createdAtMillis: Int64,
         originDeviceId: String,
-        photoBase64: String? = nil
+        photoUri: String? = nil
     ) {
         self.id = id
         self.lat = lat
@@ -35,7 +35,7 @@ public struct PinAddEvent: Equatable {
         self.description = description
         self.createdAtMillis = createdAtMillis
         self.originDeviceId = originDeviceId
-        self.photoBase64 = photoBase64
+        self.photoUri = photoUri
     }
 
     /// Create from NatoPin
@@ -48,7 +48,7 @@ public struct PinAddEvent: Equatable {
         self.description = pin.description
         self.createdAtMillis = pin.createdAtMillis
         self.originDeviceId = pin.originDeviceId.isEmpty ? deviceId : pin.originDeviceId
-        self.photoBase64 = pin.photoBase64
+        self.photoUri = pin.photoUri
     }
 }
 
@@ -175,14 +175,14 @@ public final class PinSyncCoordinator {
 
             let natoPin = NatoPin(
                 id: pin.id,
-                type: NatoPinType(rawValue: pin.typeName) ?? .friendlyUnit,
                 latitude: pin.lat,
                 longitude: pin.lon,
+                type: NatoType(rawValue: pin.typeName) ?? .infantry,
                 title: pin.title,
                 description: pin.description,
                 createdAtMillis: pin.createdAtMillis,
                 originDeviceId: pin.originDeviceId.isEmpty ? deviceId : pin.originDeviceId,
-                photoBase64: pin.photoBase64
+                photoUri: pin.photoUri
             )
 
             TransportCoordinator.shared.publishPin(natoPin)
@@ -205,14 +205,14 @@ public final class PinSyncCoordinator {
 
             let natoPin = NatoPin(
                 id: pin.id,
-                type: NatoPinType(rawValue: pin.typeName) ?? .friendlyUnit,
                 latitude: pin.lat,
                 longitude: pin.lon,
+                type: NatoType(rawValue: pin.typeName) ?? .infantry,
                 title: pin.title,
                 description: pin.description,
                 createdAtMillis: pin.createdAtMillis,
                 originDeviceId: pin.originDeviceId.isEmpty ? deviceId : pin.originDeviceId,
-                photoBase64: pin.photoBase64
+                photoUri: pin.photoUri
             )
 
             UDPClientManager.shared.publishPin(natoPin, deviceId: deviceId, callsign: callsign)

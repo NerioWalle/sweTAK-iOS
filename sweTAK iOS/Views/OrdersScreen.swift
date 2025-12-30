@@ -287,17 +287,17 @@ public struct OrderDetailScreen: View {
             OrderSection(title: "Plan", content: order.decision)
             OrderSection(title: "Preconditions", content: order.order)
 
-            if let mission = order.mission {
-                OrderSection(title: "Mission", content: mission)
+            if !order.mission.isEmpty {
+                OrderSection(title: "Mission", content: order.mission)
             }
-            if let execution = order.execution {
-                OrderSection(title: "Execution", content: execution)
+            if !order.execution.isEmpty {
+                OrderSection(title: "Execution", content: order.execution)
             }
-            if let logistics = order.logistics {
-                OrderSection(title: "Logistics", content: logistics)
+            if !order.logistics.isEmpty {
+                OrderSection(title: "Logistics", content: order.logistics)
             }
-            if let command = order.commandSignaling {
-                OrderSection(title: "Command & Signaling", content: command)
+            if !order.commandSignaling.isEmpty {
+                OrderSection(title: "Command & Signaling", content: order.commandSignaling)
             }
         }
     }

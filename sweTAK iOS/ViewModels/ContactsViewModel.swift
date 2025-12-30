@@ -106,8 +106,8 @@ public final class ContactsViewModel: ObservableObject {
         if var profile = myProfile {
             profile = ContactProfile(
                 deviceId: deviceId,
-                callsign: callsign,
                 nickname: profile.nickname,
+                callsign: callsign,
                 firstName: profile.firstName,
                 lastName: profile.lastName,
                 company: profile.company,
