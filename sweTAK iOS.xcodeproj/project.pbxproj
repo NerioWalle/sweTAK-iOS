@@ -173,6 +173,7 @@
 		2582A0F5036368A99553BB5D /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		29DC143453D7FD134B5A4C7E /* NetworkMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMessage.swift; sourceTree = "<group>"; };
 		2A66A764E54D8356E17237FB /* UDPClientManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPClientManager.swift; sourceTree = "<group>"; };
+		2A8954E843E14FF9D86DDA6B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2E6B78A98CF60559D8F3D7C7 /* MapStringUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapStringUtils.swift; sourceTree = "<group>"; };
 		30B76F14F73B7F443645CD4E /* CreateMethaneScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateMethaneScreen.swift; sourceTree = "<group>"; };
 		377AB6FEEAF78E26291A4C44 /* MapPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPersistence.swift; sourceTree = "<group>"; };
@@ -508,6 +509,7 @@
 			isa = PBXGroup;
 			children = (
 				92253F69016450E845F11343 /* Assets.xcassets */,
+				2A8954E843E14FF9D86DDA6B /* Info.plist */,
 				D20615B5BB07833BBAD520C7 /* App */,
 				4B0B59D41A436DE8CE39E3AD /* Core */,
 				32B8C4F079EFC67867325676 /* Data */,
@@ -1094,8 +1096,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = sweTAK;
+				INFOPLIST_FILE = "sweTAK iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1147,8 +1148,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = sweTAK;
+				INFOPLIST_FILE = "sweTAK iOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

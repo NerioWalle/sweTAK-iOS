@@ -65,9 +65,8 @@ public final class LocationManager: NSObject, ObservableObject {
 
         #if os(iOS)
         locationManager.activityType = .fitness
-        locationManager.allowsBackgroundLocationUpdates = true
+        // Note: allowsBackgroundLocationUpdates must be set AFTER startUpdatingLocation()
         locationManager.pausesLocationUpdatesAutomatically = false
-        locationManager.showsBackgroundLocationIndicator = true
         #endif
 
         // Get initial status
@@ -108,6 +107,9 @@ public final class LocationManager: NSObject, ObservableObject {
         locationManager.startUpdatingLocation()
         #if os(iOS)
         locationManager.startUpdatingHeading()
+        // Enable background location updates after starting location updates
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.showsBackgroundLocationIndicator = true
         #endif
         isTracking = true
 
