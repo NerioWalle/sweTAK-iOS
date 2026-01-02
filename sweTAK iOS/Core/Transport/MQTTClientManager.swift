@@ -549,17 +549,53 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 
     private func handleChatMessage(_ json: [String: Any], deviceId: String) {
-        guard let threadId = json["threadId"] as? String,
-              let fromDeviceId = json["fromDeviceId"] as? String,
-              let toDeviceId = json["toDeviceId"] as? String,
-              let text = json["text"] as? String else {
-            logger.warning("Invalid chat message")
+        logger.info("handleChatMessage received - raw JSON: \(json)")
+        logger.info("handleChatMessage - deviceId from topic: \(deviceId)")
+
+        // Try multiple field name variants for compatibility with Android
+        let fromDeviceId = json["fromDeviceId"] as? String ?? json["from"] as? String ?? json["senderId"] as? String ?? deviceId
+        let toDeviceId = json["toDeviceId"] as? String ?? json["to"] as? String ?? json["recipientId"] as? String ?? ""
+        let text = json["text"] as? String ?? json["message"] as? String ?? json["content"] as? String ?? json["body"] as? String ?? ""
+
+        logger.info("handleChatMessage - parsed: from=\(fromDeviceId), to=\(toDeviceId), text=\(text.prefix(30))")
+
+        guard !text.isEmpty else {
+            logger.warning("Invalid chat message - no text field found in: \(json.keys)")
             return
         }
 
-        let timestamp = json["timestamp"] as? Int64 ?? Date.currentMillis
+        // Check if this message is for us (or broadcast)
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        logger.info("handleChatMessage - myDeviceId: \(myDeviceId)")
+
+        // Accept message if: addressed to us, no recipient specified, or we're the sender (echo)
+        let isForUs = toDeviceId == myDeviceId || toDeviceId.isEmpty
+        let isFromUs = fromDeviceId == myDeviceId
+
+        if isFromUs {
+            logger.debug("Chat message is from us (echo), ignoring")
+            return
+        }
+
+        if !isForUs {
+            logger.info("Chat message not for us (to: \(toDeviceId), me: \(myDeviceId)) - but processing anyway for debug")
+            // Still process for now to debug - remove this later
+        }
+
+        // Get timestamp with fallbacks
+        let timestamp = json["timestamp"] as? Int64
+            ?? json["timestampMillis"] as? Int64
+            ?? json["ts"] as? Int64
+            ?? (json["timestamp"] as? Double).map { Int64($0) }
+            ?? (json["timestampMillis"] as? Double).map { Int64($0) }
+            ?? Date.currentMillis
+
+        // For incoming messages, the thread should be keyed by the sender's deviceId
+        // This matches how outgoing messages use toDeviceId as threadId
+        let threadId = json["threadId"] as? String ?? fromDeviceId
 
         let message = ChatMessage(
+            id: json["id"] as? String ?? json["messageId"] as? String ?? "\(timestamp)-\(text.hashValue)",
             threadId: threadId,
             fromDeviceId: fromDeviceId,
             toDeviceId: toDeviceId,
@@ -568,7 +604,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             direction: .incoming
         )
 
-        logger.debug("Chat received from \(fromDeviceId): \(text.prefix(50))")
+        logger.info("Chat message created - threadId: \(threadId), delivering to listener")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.chatListener?.onChatMessageReceived(message: message)

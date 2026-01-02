@@ -187,29 +187,54 @@ public final class ChatViewModel: ObservableObject {
 
     /// Add an incoming message
     public func addIncomingMessage(_ message: ChatMessage) {
-        let threadId = message.threadId
+        // For incoming messages, we key threads by the sender's deviceId
+        // This ensures conversations are grouped correctly regardless of what threadId the sender uses
+        let effectiveThreadId = message.fromDeviceId
 
-        // Update threads storage
-        var threadMessages = threads[threadId] ?? []
+        logger.info("addIncomingMessage: from=\(message.fromDeviceId), originalThreadId=\(message.threadId), effectiveThreadId=\(effectiveThreadId), currentThreadId=\(self.currentThreadId ?? "nil")")
+
+        // Update threads storage using the sender's deviceId as the thread key
+        var threadMessages = threads[effectiveThreadId] ?? []
 
         // Avoid duplicates
         if !threadMessages.contains(where: { $0.id == message.id }) {
-            threadMessages.append(message)
-            threads[threadId] = threadMessages
+            // Create message with corrected threadId
+            let correctedMessage = ChatMessage(
+                id: message.id,
+                threadId: effectiveThreadId,
+                fromDeviceId: message.fromDeviceId,
+                toDeviceId: message.toDeviceId,
+                text: message.text,
+                timestampMillis: message.timestampMillis,
+                direction: message.direction,
+                acknowledged: message.acknowledged
+            )
+
+            threadMessages.append(correctedMessage)
+            threads[effectiveThreadId] = threadMessages
             saveThreads()
 
-            // If this is the current thread, update UI
-            if threadId == currentThreadId {
-                if !uiState.messages.contains(where: { $0.id == message.id }) {
-                    uiState.messages.append(message)
+            // Check if this message is for the currently open chat
+            // Match by sender's deviceId since that's how we key threads
+            let isCurrentThread = effectiveThreadId == currentThreadId
+
+            logger.info("addIncomingMessage: isCurrentThread=\(isCurrentThread)")
+
+            if isCurrentThread {
+                if !uiState.messages.contains(where: { $0.id == correctedMessage.id }) {
+                    uiState.messages.append(correctedMessage)
+                    logger.info("addIncomingMessage: Added to UI - now have \(self.uiState.messages.count) messages")
                 }
             } else {
                 // Increment unread count
-                unreadCounts[threadId] = (unreadCounts[threadId] ?? 0) + 1
+                unreadCounts[effectiveThreadId] = (unreadCounts[effectiveThreadId] ?? 0) + 1
                 saveUnreadCounts()
+                logger.info("addIncomingMessage: Not current thread, incremented unread count")
             }
 
             logger.debug("Added incoming message from \(message.fromDeviceId)")
+        } else {
+            logger.debug("Duplicate message ignored: \(message.id)")
         }
     }
 

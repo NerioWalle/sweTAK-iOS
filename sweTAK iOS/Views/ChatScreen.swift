@@ -278,6 +278,21 @@ private struct RecipientRow: View {
 
 // MARK: - Chat Threads List
 
+/// Helper struct for sheet presentation
+private struct ChatThreadSelection: Identifiable {
+    let id: String
+    let threadId: String
+    let callsign: String
+    let nickname: String?
+
+    init(threadId: String, callsign: String, nickname: String? = nil) {
+        self.id = threadId
+        self.threadId = threadId
+        self.callsign = callsign
+        self.nickname = nickname
+    }
+}
+
 /// Screen showing all chat threads
 public struct ChatThreadsScreen: View {
     @ObservedObject private var chatVM = ChatViewModel.shared
@@ -285,8 +300,7 @@ public struct ChatThreadsScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showingRecipientPicker = false
-    @State private var selectedThread: (threadId: String, callsign: String, nickname: String?)?
-    @State private var showingChat = false
+    @State private var selectedThread: ChatThreadSelection?
 
     public init() {}
 
@@ -294,21 +308,38 @@ public struct ChatThreadsScreen: View {
         NavigationStack {
             List {
                 if chatVM.allThreadIds.isEmpty {
-                    Section {
-                        VStack(spacing: 12) {
-                            Image(systemName: "bubble.left.and.bubble.right")
-                                .font(.largeTitle)
-                                .foregroundColor(.secondary)
+                    // Show available contacts when no threads exist
+                    if availableContacts.isEmpty {
+                        Section {
+                            VStack(spacing: 12) {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.secondary)
 
-                            Text("No conversations yet")
-                                .font(.headline)
+                                Text("No conversations yet")
+                                    .font(.headline)
 
-                            Text("Start a new chat to begin messaging")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                Text("No contacts available. Discover peers in the Contact Book first.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
+                    } else {
+                        Section("Start a conversation") {
+                            ForEach(availableContacts) { contact in
+                                RecipientRow(contact: contact)
+                                    .onTapGesture {
+                                        selectedThread = ChatThreadSelection(
+                                            threadId: contact.deviceId,
+                                            callsign: contact.callsign ?? "Unknown",
+                                            nickname: contact.nickname
+                                        )
+                                    }
+                            }
+                        }
                     }
                 } else {
                     Section("Conversations") {
@@ -321,12 +352,11 @@ public struct ChatThreadsScreen: View {
                             )
                             .onTapGesture {
                                 let contact = contactsVM.contacts.first { $0.deviceId == threadId }
-                                selectedThread = (
+                                selectedThread = ChatThreadSelection(
                                     threadId: threadId,
                                     callsign: contact?.callsign ?? "Unknown",
                                     nickname: contact?.nickname
                                 )
-                                showingChat = true
                             }
                         }
                         .onDelete(perform: deleteThreads)
@@ -351,22 +381,19 @@ public struct ChatThreadsScreen: View {
             }
             .sheet(isPresented: $showingRecipientPicker) {
                 ChatRecipientPicker { contact in
-                    selectedThread = (
+                    selectedThread = ChatThreadSelection(
                         threadId: contact.deviceId,
                         callsign: contact.callsign ?? "Unknown",
                         nickname: contact.nickname
                     )
-                    showingChat = true
                 }
             }
-            .sheet(isPresented: $showingChat) {
-                if let thread = selectedThread {
-                    ChatScreen(
-                        threadId: thread.threadId,
-                        peerCallsign: thread.callsign,
-                        peerNickname: thread.nickname
-                    )
-                }
+            .sheet(item: $selectedThread) { thread in
+                ChatScreen(
+                    threadId: thread.threadId,
+                    peerCallsign: thread.callsign,
+                    peerNickname: thread.nickname
+                )
             }
             .badge(chatVM.totalUnreadCount)
         }
@@ -377,6 +404,13 @@ public struct ChatThreadsScreen: View {
             let threadId = chatVM.allThreadIds[index]
             chatVM.deleteThread(threadId)
         }
+    }
+
+    private var availableContacts: [ContactProfile] {
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        return contactsVM.contacts
+            .filter { $0.deviceId != myDeviceId && !contactsVM.isBlocked($0.deviceId) }
+            .sorted { ($0.callsign ?? "").lowercased() < ($1.callsign ?? "").lowercased() }
     }
 }
 
