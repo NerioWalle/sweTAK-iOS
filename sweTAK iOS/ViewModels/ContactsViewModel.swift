@@ -227,15 +227,20 @@ public final class ContactsViewModel: ObservableObject {
     }
 
     /// Set my profile directly
-    public func setMyProfile(_ profile: ContactProfile) {
+    /// - Parameters:
+    ///   - profile: The profile to set
+    ///   - broadcast: Whether to broadcast the profile to the network (default: false to avoid double broadcast when called from SettingsViewModel)
+    public func setMyProfile(_ profile: ContactProfile, broadcast: Bool = false) {
         myProfile = profile
         saveMyProfile()
 
         // Also update in contacts list
         upsertContact(profile)
 
-        // Broadcast to network
-        TransportCoordinator.shared.publishProfile(profile)
+        // Optionally broadcast to network
+        if broadcast {
+            TransportCoordinator.shared.publishProfile(profile)
+        }
         logger.info("Set my profile: \(profile.callsign ?? "Unknown")")
     }
 }

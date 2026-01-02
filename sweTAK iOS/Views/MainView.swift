@@ -44,6 +44,12 @@ public struct MainView: View {
     @State private var coordinateInputText = ""
     @State private var coordinateInputError: String? = nil
 
+    // User location screen position (updated by timer for smooth line rendering)
+    @State private var userLocationScreenPoint: CGPoint? = nil
+
+    // Timer for smooth crosshair line updates
+    private let lineUpdateTimer = Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()
+
     // Pin selection state
     @State private var selectedPin: NatoPin? = nil
     @State private var showingPinActionSheet = false
@@ -61,8 +67,15 @@ public struct MainView: View {
             // Full-screen map (background)
             mapView
 
-            // Crosshair overlay at center (with offset)
-            crosshairOverlay
+            // Line from my position to crosshair (only when not following)
+            if !mapVM.followMe {
+                crosshairLineOverlay
+            }
+
+            // Crosshair overlay at center (only when not following)
+            if !mapVM.followMe {
+                crosshairOverlay
+            }
 
             // Long-press context menu overlay
             if showingLongPressMenu {
@@ -78,18 +91,24 @@ public struct MainView: View {
             }
 
             // UI Overlays
-            VStack(spacing: 0) {
-                // Top control panel (Layers, Lighting, Messaging)
-                topControlPanel
-                    .padding(.top, 60)
-                    .padding(.horizontal, 16)
+            GeometryReader { geometry in
+                let isLandscape = geometry.size.width > geometry.size.height
+                let topPadding: CGFloat = isLandscape ? 16 : 48
+                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
 
-                Spacer()
+                VStack(spacing: 0) {
+                    // Top control panel (Layers, Lighting, Messaging)
+                    topControlPanel
+                        .padding(.top, geometry.safeAreaInsets.top + topPadding)
+                        .padding(.horizontal, sidePadding)
 
-                // HUD overlay at bottom-left
-                fullHudOverlay
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    Spacer()
+
+                    // HUD overlay at bottom-left
+                    fullHudOverlay
+                        .padding(.horizontal, sidePadding)
+                        .padding(.bottom, max(16, geometry.safeAreaInsets.bottom))
+                }
             }
 
             // Bottom-right map controls
@@ -102,11 +121,47 @@ public struct MainView: View {
                         .padding(.bottom, 100)
                 }
             }
+
+            // Compass and Heading HUD (top-left, below top bar)
+            GeometryReader { geometry in
+                let isLandscape = geometry.size.width > geometry.size.height
+                let topPadding: CGFloat = isLandscape ? 16 : 48
+                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Spacer()
+                        .frame(height: geometry.safeAreaInsets.top + topPadding + 68)
+
+                    // Compass needle showing north
+                    compassNeedleView
+
+                    // Heading angle display
+                    headingAngleView
+                }
+                .padding(.leading, sidePadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .ignoresSafeArea(edges: .all)
         .onAppear {
+            // Reset centering flag so we center on user with 20km radius
+            mapVM.resetInitialCentering()
+
             locationManager.requestPermission()
             locationManager.setBroadcastInterval(settingsVM.gpsIntervalSeconds)
+            locationManager.startTracking()
+        }
+        .onReceive(locationManager.$currentLocation) { location in
+            // Center map on user's position with 20km radius on first location update
+            if let location = location, !mapVM.hasCenteredInitially {
+                if let mapView = MapViewRepresentable.mapViewReference {
+                    // Calculate bounds for 20km radius (like Android implementation)
+                    let radiusMeters = 20_000.0
+                    let bounds = regionForRadius(center: location.coordinate, radiusMeters: radiusMeters)
+                    mapView.setRegion(bounds, animated: true)
+                    mapVM.markInitiallyCentered()
+                }
+            }
         }
         // Sheet presentations
         .sheet(isPresented: $showingContacts) {
@@ -322,6 +377,15 @@ public struct MainView: View {
             onPinSelected: { pin in
                 selectedPin = pin
                 showingPinActionSheet = true
+            },
+            onUserLocationScreenUpdate: { point in
+                userLocationScreenPoint = point
+            },
+            onUserDraggedMap: {
+                // User dragged the map - disable follow mode and show crosshair
+                if mapVM.followMe {
+                    mapVM.setFollowMe(false)
+                }
             }
         )
     }
@@ -657,25 +721,36 @@ public struct MainView: View {
                 isActive: mapVM.followMe,
                 activeColor: .blue
             ) {
-                if let position = locationManager.currentCoordinate {
-                    mapVM.saveCameraPosition(
-                        lat: position.latitude,
-                        lng: position.longitude,
-                        zoom: mapVM.zoom,
-                        bearing: mapVM.mapBearing
-                    )
-                }
-                mapVM.toggleFollowMe()
+                // Enable follow mode and reset crosshair
+                crosshairOffset = .zero
+                mapVM.updateCrosshairPosition(nil)
+                mapVM.setFollowMe(true)
             }
 
             // Zoom in button
             MapControlButton(icon: "plus") {
-                mapVM.zoomIn()
+                if let mapView = MapViewRepresentable.mapViewReference {
+                    let currentZoom = mapView.region.span.latitudeDelta
+                    let newSpan = max(currentZoom / 2.0, 0.001)  // Zoom in (smaller span)
+                    let newRegion = MKCoordinateRegion(
+                        center: mapView.centerCoordinate,
+                        span: MKCoordinateSpan(latitudeDelta: newSpan, longitudeDelta: newSpan)
+                    )
+                    mapView.setRegion(newRegion, animated: true)
+                }
             }
 
             // Zoom out button
             MapControlButton(icon: "minus") {
-                mapVM.zoomOut()
+                if let mapView = MapViewRepresentable.mapViewReference {
+                    let currentZoom = mapView.region.span.latitudeDelta
+                    let newSpan = min(currentZoom * 2.0, 180.0)  // Zoom out (larger span)
+                    let newRegion = MKCoordinateRegion(
+                        center: mapView.centerCoordinate,
+                        span: MKCoordinateSpan(latitudeDelta: newSpan, longitudeDelta: newSpan)
+                    )
+                    mapView.setRegion(newRegion, animated: true)
+                }
             }
 
             // Recording button
@@ -705,6 +780,156 @@ public struct MainView: View {
         .padding(8)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Compass Needle View
+
+    private var compassNeedleView: some View {
+        ZStack {
+            // Background circle
+            Circle()
+                .fill(.ultraThinMaterial)
+                .frame(width: 44, height: 44)
+
+            // Compass needle pointing north
+            // Rotate based on device heading (negative because we want to show where north is)
+            Image(systemName: "location.north.fill")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(.red)
+                .rotationEffect(.degrees(-(locationManager.currentHeadingDegrees ?? 0)))
+        }
+        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+    }
+
+    // MARK: - Heading Angle View
+
+    private var headingAngleView: some View {
+        let heading = locationManager.currentHeadingDegrees ?? 0
+        let cardinalDirection = headingToCardinal(heading)
+        let useMils = settingsVM.settings.coordFormat == .mgrs
+
+        return HStack(spacing: 4) {
+            Image(systemName: "arrow.up")
+                .font(.caption)
+                .foregroundColor(.primary)
+
+            if useMils {
+                // Military format: show mils (6400 mils = 360°)
+                let mils = heading * (6400.0 / 360.0)
+                Text(String(format: "%.0f mils", mils))
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.medium)
+            } else {
+                Text(String(format: "%.0f°", heading))
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.medium)
+            }
+
+            Text(cardinalDirection)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+    }
+
+    private func headingToCardinal(_ heading: Double) -> String {
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let index = Int((heading + 22.5) / 45.0) % 8
+        return directions[index]
+    }
+
+    // MARK: - Crosshair Line Overlay (SwiftUI for instant updates)
+
+    private var crosshairLineOverlay: some View {
+        GeometryReader { geometry in
+            let screenCenter = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            let crosshairScreenPos = CGPoint(
+                x: screenCenter.x + crosshairOffset.width,
+                y: screenCenter.y + crosshairOffset.height
+            )
+
+            // Use the timer-updated screen point for smooth rendering
+            let startPoint: CGPoint = {
+                guard let userPoint = userLocationScreenPoint else {
+                    return screenCenter
+                }
+
+                // Check if the point is within the visible screen area
+                let screenBounds = CGRect(origin: .zero, size: geometry.size)
+                if screenBounds.contains(userPoint) {
+                    return userPoint
+                }
+
+                // User is off-screen - calculate direction and draw to edge
+                let dirX = userPoint.x - crosshairScreenPos.x
+                let dirY = userPoint.y - crosshairScreenPos.y
+                let magnitude = sqrt(dirX * dirX + dirY * dirY)
+
+                if magnitude > 0 {
+                    let normX = dirX / magnitude
+                    let normY = dirY / magnitude
+
+                    // Find intersection with screen edge
+                    var scale: CGFloat = magnitude
+
+                    // Check left/right edges
+                    if normX > 0 {
+                        let rightDist = (geometry.size.width - crosshairScreenPos.x) / normX
+                        scale = min(scale, rightDist)
+                    } else if normX < 0 {
+                        let leftDist = crosshairScreenPos.x / (-normX)
+                        scale = min(scale, leftDist)
+                    }
+
+                    // Check top/bottom edges
+                    if normY > 0 {
+                        let bottomDist = (geometry.size.height - crosshairScreenPos.y) / normY
+                        scale = min(scale, bottomDist)
+                    } else if normY < 0 {
+                        let topDist = crosshairScreenPos.y / (-normY)
+                        scale = min(scale, topDist)
+                    }
+
+                    return CGPoint(
+                        x: crosshairScreenPos.x + normX * scale,
+                        y: crosshairScreenPos.y + normY * scale
+                    )
+                }
+
+                return screenCenter
+            }()
+
+            Path { path in
+                path.move(to: startPoint)
+                path.addLine(to: crosshairScreenPos)
+            }
+            .stroke(Color.blue, lineWidth: 2)
+        }
+        .allowsHitTesting(false)
+        .onReceive(lineUpdateTimer) { _ in
+            // Update user location screen point at 30fps for smooth line rendering
+            guard !mapVM.followMe,
+                  let mapView = MapViewRepresentable.mapViewReference else {
+                return
+            }
+
+            // Update user location screen point for line drawing
+            if let userLocation = mapView.userLocation.location?.coordinate {
+                userLocationScreenPoint = mapView.convert(userLocation, toPointTo: nil)
+            }
+
+            // Update crosshair position based on map center + offset
+            // This ensures the HUD shows accurate crosshair coordinates
+            let mapCenter = mapView.centerCoordinate
+            if abs(crosshairOffset.width) < 1 && abs(crosshairOffset.height) < 1 {
+                // Crosshair is at center - use map center directly
+                mapVM.updateCrosshairPosition(mapCenter)
+            }
+        }
     }
 
     // MARK: - Crosshair Overlay
@@ -980,6 +1205,26 @@ public struct MainView: View {
         let seconds = Int(duration.truncatingRemainder(dividingBy: 60))
         return String(format: "%d:%02d", minutes, seconds)
     }
+
+    /// Calculate MKCoordinateRegion for a given radius around a center point
+    /// Matches Android's latLngBoundsForRadius implementation
+    private func regionForRadius(center: CLLocationCoordinate2D, radiusMeters: Double) -> MKCoordinateRegion {
+        let earthRadius = 6371000.0  // meters
+        let latRad = center.latitude * .pi / 180.0
+
+        // Calculate deltas in radians
+        let dLat = radiusMeters / earthRadius
+        let dLon = radiusMeters / (earthRadius * cos(latRad))
+
+        // Convert to degrees and double for full span (radius * 2)
+        let latSpan = (dLat * 180.0 / .pi) * 2.0
+        let lonSpan = (dLon * 180.0 / .pi) * 2.0
+
+        return MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: latSpan, longitudeDelta: lonSpan)
+        )
+    }
 }
 
 // MARK: - Control Panel Button
@@ -1041,10 +1286,17 @@ struct MapViewRepresentable: UIViewRepresentable {
     let peerPositions: [PeerPosition]
     var onLongPress: ((CLLocationCoordinate2D, CGPoint) -> Void)?
     var onPinSelected: ((NatoPin) -> Void)?
+    var onUserLocationScreenUpdate: ((CGPoint?) -> Void)?
+    var onUserDraggedMap: (() -> Void)?
+    var onMapReady: ((MKMapView) -> Void)?
 
     @ObservedObject private var pinsVM = PinsViewModel.shared
     @ObservedObject private var locationManager = LocationManager.shared
     @ObservedObject private var settingsVM = SettingsViewModel.shared
+    @ObservedObject private var routesVM = RoutesViewModel.shared
+
+    // Static reference to allow direct map control
+    static var mapViewReference: MKMapView?
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -1052,6 +1304,9 @@ struct MapViewRepresentable: UIViewRepresentable {
         mapView.showsUserLocation = true
         mapView.showsCompass = true
         mapView.setRegion(region, animated: false)
+
+        // Store reference for direct control
+        MapViewRepresentable.mapViewReference = mapView
 
         // Apply map style
         updateMapType(mapView)
@@ -1064,10 +1319,24 @@ struct MapViewRepresentable: UIViewRepresentable {
         longPressGesture.minimumPressDuration = 0.5
         mapView.addGestureRecognizer(longPressGesture)
 
+        // Add pan gesture recognizer to detect user dragging
+        let panGesture = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        panGesture.delegate = context.coordinator
+        mapView.addGestureRecognizer(panGesture)
+
+        // Notify that map is ready
+        onMapReady?(mapView)
+
         return mapView
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
+        // Update static reference
+        MapViewRepresentable.mapViewReference = mapView
+
         // Update map type based on settings
         updateMapType(mapView)
 
@@ -1080,18 +1349,34 @@ struct MapViewRepresentable: UIViewRepresentable {
         // Update breadcrumb overlay
         updateBreadcrumbOverlay(mapView)
 
-        // Follow mode - only center if followMode just became true
-        // We track this in coordinator to avoid infinite loops
-        if followMode != context.coordinator.wasFollowing {
-            context.coordinator.wasFollowing = followMode
-            if followMode, let position = myPosition {
+        // Report user location screen position for crosshair line
+        if let userLocation = mapView.userLocation.location?.coordinate {
+            let screenPoint = mapView.convert(userLocation, toPointTo: mapView)
+            if mapView.bounds.contains(screenPoint) {
+                onUserLocationScreenUpdate?(screenPoint)
+            } else {
+                onUserLocationScreenUpdate?(nil)
+            }
+        } else {
+            onUserLocationScreenUpdate?(nil)
+        }
+
+        // Follow mode - continuously center on user position (keeping current zoom)
+        if followMode, let position = myPosition {
+            let currentCenter = mapView.centerCoordinate
+            let latDiff = abs(position.latitude - currentCenter.latitude)
+            let lonDiff = abs(position.longitude - currentCenter.longitude)
+
+            if latDiff > 0.0001 || lonDiff > 0.0001 {
+                context.coordinator.isProgrammaticRegionChange = true
                 let newRegion = MKCoordinateRegion(
                     center: position,
-                    span: region.span
+                    span: mapView.region.span  // Keep current zoom
                 )
                 mapView.setRegion(newRegion, animated: true)
             }
         }
+        context.coordinator.wasFollowing = followMode
     }
 
     private func updateMapType(_ mapView: MKMapView) {
@@ -1178,15 +1463,24 @@ struct MapViewRepresentable: UIViewRepresentable {
     }
 
     private func updateBreadcrumbOverlay(_ mapView: MKMapView) {
-        // Remove existing breadcrumb overlays
-        let existingOverlays = mapView.overlays.filter { $0 is MKPolyline }
+        // Remove existing breadcrumb overlays (but not crosshair line)
+        let existingOverlays = mapView.overlays.filter { $0 is BreadcrumbPolyline || $0 is SavedRoutePolyline }
         mapView.removeOverlays(existingOverlays)
 
         // Add current breadcrumb trail if recording
         if locationManager.isRecordingBreadcrumbs && locationManager.breadcrumbPoints.count >= 2 {
             let coordinates = locationManager.breadcrumbPoints.map { $0.coordinate }
-            let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
+            let polyline = BreadcrumbPolyline(coordinates: coordinates, count: coordinates.count)
             mapView.addOverlay(polyline)
+        }
+
+        // Add visible saved routes
+        for route in RoutesViewModel.shared.visibleBreadcrumbRoutes {
+            if route.points.count >= 2 {
+                let coordinates = route.points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                let polyline = SavedRoutePolyline(coordinates: coordinates, count: coordinates.count)
+                mapView.addOverlay(polyline)
+            }
         }
     }
 
@@ -1194,9 +1488,10 @@ struct MapViewRepresentable: UIViewRepresentable {
         Coordinator(self)
     }
 
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: MapViewRepresentable
         var wasFollowing: Bool = false
+        var isProgrammaticRegionChange: Bool = false
 
         init(_ parent: MapViewRepresentable) {
             self.parent = parent
@@ -1210,6 +1505,18 @@ struct MapViewRepresentable: UIViewRepresentable {
             let coordinate = mapView.convert(screenPoint, toCoordinateFrom: mapView)
 
             parent.onLongPress?(coordinate, screenPoint)
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            if gesture.state == .began {
+                // User started dragging the map - disable follow mode
+                parent.onUserDraggedMap?()
+            }
+        }
+
+        // Allow pan gesture to work simultaneously with map's built-in gestures
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -1273,7 +1580,31 @@ struct MapViewRepresentable: UIViewRepresentable {
                 return MKTileOverlayRenderer(tileOverlay: tileOverlay)
             }
 
-            // Handle polyline overlays (breadcrumb trails)
+            // Handle crosshair line overlay
+            if let polyline = overlay as? CrosshairLinePolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor.systemBlue
+                renderer.lineWidth = 2
+                return renderer
+            }
+
+            // Handle breadcrumb polyline overlays (active recording)
+            if let polyline = overlay as? BreadcrumbPolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor(parent.settingsVM.breadcrumbColor)
+                renderer.lineWidth = 3
+                return renderer
+            }
+
+            // Handle saved route polyline overlays
+            if let polyline = overlay as? SavedRoutePolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor(parent.settingsVM.breadcrumbColor).withAlphaComponent(0.7)
+                renderer.lineWidth = 3
+                return renderer
+            }
+
+            // Handle any other polyline overlays
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 renderer.strokeColor = UIColor(parent.settingsVM.breadcrumbColor)
@@ -1285,7 +1616,12 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-            // Update region binding
+            // Skip updating binding if this was a programmatic change (prevents infinite loop)
+            if isProgrammaticRegionChange {
+                isProgrammaticRegionChange = false
+                return
+            }
+            // Update region binding only for user-initiated changes
             parent.region = mapView.region
         }
     }
@@ -1345,6 +1681,17 @@ class PinAnnotation: NSObject, MKAnnotation {
         }
     }
 }
+
+// MARK: - Custom Polyline Classes
+
+/// Polyline for active breadcrumb recording
+class BreadcrumbPolyline: MKPolyline {}
+
+/// Polyline for saved routes
+class SavedRoutePolyline: MKPolyline {}
+
+/// Polyline for crosshair-to-position line
+class CrosshairLinePolyline: MKPolyline {}
 
 // MARK: - Preview
 

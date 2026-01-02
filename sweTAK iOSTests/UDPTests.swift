@@ -97,7 +97,7 @@ final class UDPTests: XCTestCase {
     func testUDPMessageTypes() {
         // UDP uses specific type strings
         XCTAssertEqual(MessageType.hello.rawValue, "hello")
-        XCTAssertEqual(MessageType.position.rawValue, "pos")
+        XCTAssertEqual(MessageType.position.rawValue, "position")
         XCTAssertEqual(MessageType.profile.rawValue, "profile")
         XCTAssertEqual(MessageType.pin.rawValue, "pin")
         XCTAssertEqual(MessageType.chat.rawValue, "chat")

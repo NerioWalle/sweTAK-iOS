@@ -63,7 +63,7 @@ public final class MapViewModel: ObservableObject {
 
     // MARK: - Follow Mode State
 
-    @Published public private(set) var followMe: Bool = false
+    @Published public private(set) var followMe: Bool = true  // Start in follow mode by default
     @Published public private(set) var hasCenteredInitially: Bool = false
 
     // MARK: - Device Heading
@@ -194,21 +194,15 @@ public final class MapViewModel: ObservableObject {
     /// Zoom in by one level
     public func zoomIn() {
         let newZoom = min(zoom + 1, 20.0)
-        if let pos = cameraPosition {
-            saveCameraPosition(lat: pos.latitude, lng: pos.longitude, zoom: newZoom, bearing: pos.bearing)
-        } else {
-            self.zoom = newZoom
-        }
+        let region = cameraRegion
+        saveCameraPosition(lat: region.center.latitude, lng: region.center.longitude, zoom: newZoom, bearing: mapBearing)
     }
 
     /// Zoom out by one level
     public func zoomOut() {
         let newZoom = max(zoom - 1, 1.0)
-        if let pos = cameraPosition {
-            saveCameraPosition(lat: pos.latitude, lng: pos.longitude, zoom: newZoom, bearing: pos.bearing)
-        } else {
-            self.zoom = newZoom
-        }
+        let region = cameraRegion
+        saveCameraPosition(lat: region.center.latitude, lng: region.center.longitude, zoom: newZoom, bearing: mapBearing)
     }
 
     /// Update the map bearing/rotation
@@ -266,6 +260,14 @@ public final class MapViewModel: ObservableObject {
     /// Reset the initial centering flag
     public func resetInitialCentering() {
         hasCenteredInitially = false
+    }
+
+    /// Center map on a location with specified span
+    public func centerOnLocation(_ coordinate: CLLocationCoordinate2D, spanDegrees: Double) {
+        let zoom = zoomFromSpan(MKCoordinateSpan(latitudeDelta: spanDegrees, longitudeDelta: spanDegrees))
+        saveCameraPosition(lat: coordinate.latitude, lng: coordinate.longitude, zoom: zoom, bearing: mapBearing)
+        hasCenteredInitially = true
+        logger.info("Centered on location: \(coordinate.latitude), \(coordinate.longitude) with span \(spanDegrees)°")
     }
 
     // MARK: - Device Heading

@@ -175,6 +175,11 @@ public final class SettingsViewModel: ObservableObject {
     private init() {
         loadFromStorage()
         setupConnectionStateObserver()
+
+        // Sync profile to ContactsViewModel after a short delay to ensure it's initialized
+        DispatchQueue.main.async { [weak self] in
+            self?.syncProfileToContacts()
+        }
     }
 
     private func setupConnectionStateObserver() {
@@ -258,6 +263,9 @@ public final class SettingsViewModel: ObservableObject {
         profile = newProfile
         saveProfile()
 
+        // Sync to ContactsViewModel
+        syncProfileToContacts()
+
         // Publish profile update over network
         TransportCoordinator.shared.publishProfile(profile)
 
@@ -268,11 +276,31 @@ public final class SettingsViewModel: ObservableObject {
     public func updateCallsign(_ callsign: String) {
         profile.callsign = callsign
         saveProfile()
+        syncProfileToContacts()
     }
 
     public func updateNickname(_ nickname: String) {
         profile.nickname = nickname
         saveProfile()
+        syncProfileToContacts()
+    }
+
+    /// Sync local profile to ContactsViewModel for network operations
+    private func syncProfileToContacts() {
+        let contactProfile = ContactProfile(
+            deviceId: deviceId,
+            nickname: profile.nickname.isEmpty ? nil : profile.nickname,
+            callsign: profile.callsign.isEmpty ? nil : profile.callsign,
+            firstName: profile.firstName.isEmpty ? nil : profile.firstName,
+            lastName: profile.lastName.isEmpty ? nil : profile.lastName,
+            company: profile.company.isEmpty ? nil : profile.company,
+            platoon: profile.platoon.isEmpty ? nil : profile.platoon,
+            squad: profile.squad.isEmpty ? nil : profile.squad,
+            mobile: profile.phone.isEmpty ? nil : profile.phone,
+            email: profile.email.isEmpty ? nil : profile.email,
+            role: profile.role
+        )
+        ContactsViewModel.shared.setMyProfile(contactProfile)
     }
 
     // MARK: - Display Settings

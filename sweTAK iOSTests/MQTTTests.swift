@@ -158,7 +158,7 @@ final class MQTTTests: XCTestCase {
 
     func testMessageTypeRawValues() {
         // Verify raw values match Android protocol
-        XCTAssertEqual(MessageType.position.rawValue, "pos")
+        XCTAssertEqual(MessageType.position.rawValue, "position")
         XCTAssertEqual(MessageType.pin.rawValue, "pin")
         XCTAssertEqual(MessageType.pinDelete.rawValue, "pin_delete")
         XCTAssertEqual(MessageType.profile.rawValue, "profile")

@@ -67,7 +67,7 @@ public struct HudOverlay: View {
             if let bearing = calculatedBearing {
                 HudRow(
                     label: "Bearing:",
-                    value: String(format: "%.0f°", bearing)
+                    value: formatBearing(bearing)
                 )
             }
         }
@@ -160,6 +160,18 @@ public struct HudOverlay: View {
         let c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
         return earthRadius * c
+    }
+
+    // MARK: - Bearing Formatting
+
+    private func formatBearing(_ bearing: Double) -> String {
+        // Use mils for MGRS (military) format, degrees otherwise
+        if coordMode == .mgrs {
+            let mils = bearing * (6400.0 / 360.0)
+            return String(format: "%.0f mils", mils)
+        } else {
+            return String(format: "%.0f°", bearing)
+        }
     }
 
     // MARK: - Bearing Calculation

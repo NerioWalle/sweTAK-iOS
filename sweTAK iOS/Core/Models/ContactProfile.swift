@@ -141,18 +141,19 @@ public struct ContactProfile: Codable, Identifiable, Equatable {
     }
 
     /// Convert to JSON dictionary for network transmission
+    /// Field names match Android protocol expectations
     public func toJSON() -> [String: Any] {
         var json: [String: Any] = [
             "deviceId": deviceId
         ]
         if let callsign = callsign { json["callsign"] = callsign }
-        if let nickname = nickname { json["nick"] = nickname }
-        if let firstName = firstName { json["first"] = firstName }
-        if let lastName = lastName { json["last"] = lastName }
+        if let nickname = nickname { json["nickname"] = nickname }
+        if let firstName = firstName { json["firstName"] = firstName }
+        if let lastName = lastName { json["lastName"] = lastName }
         if let company = company { json["company"] = company }
         if let platoon = platoon { json["platoon"] = platoon }
         if let squad = squad { json["squad"] = squad }
-        if let mobile = mobile { json["mobile"] = mobile }
+        if let mobile = mobile { json["phone"] = mobile }
         if let email = email { json["email"] = email }
         if let photoUri = photoUri { json["photoUri"] = photoUri }
         if role != .none { json["role"] = role.rawValue }

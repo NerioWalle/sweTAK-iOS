@@ -4,7 +4,7 @@ import Foundation
 
 /// Network message types matching Android protocol
 public enum MessageType: String, Codable {
-    case position = "pos"
+    case position = "position"
     case pin = "pin"
     case pinDelete = "pin_delete"
     case pinRequest = "pin_request"

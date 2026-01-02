@@ -92,6 +92,10 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             "ts": message.timestamp
         ]
 
+        // Add callsign from SettingsViewModel for all messages
+        let callsign = SettingsViewModel.shared.callsign
+        flatJson["callsign"] = callsign
+
         // Merge payload fields into top level
         for (key, value) in message.payload {
             // Map some field names to match Android protocol
@@ -108,6 +112,9 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         if let createdAt = message.payload["createdAtMillis"] {
             flatJson["createdAtMillis"] = createdAt
         }
+
+        // Log the final JSON for debugging
+        print(">>> MQTT send() JSON: \(flatJson)")
 
         do {
             let data = try JSONSerialization.data(withJSONObject: flatJson, options: [])
