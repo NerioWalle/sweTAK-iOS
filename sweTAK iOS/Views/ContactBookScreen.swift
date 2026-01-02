@@ -29,24 +29,33 @@ public struct ContactBookScreen: View {
                         dismiss()
                     }
                 }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button(action: clearContacts) {
-                            Text("Clear")
-                        }
-
-                        Button(action: refreshContacts) {
-                            if isRefreshing {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                        }
-                        .disabled(isRefreshing)
+            }
+            .safeAreaInset(edge: .bottom) {
+                // Bottom buttons for Clear and Refresh
+                HStack(spacing: 16) {
+                    Button(action: clearContacts) {
+                        Label("Clear List", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+
+                    Button(action: refreshContacts) {
+                        if isRefreshing {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isRefreshing)
                 }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .background(.ultraThinMaterial)
             }
             .sheet(isPresented: $showingContactDetail) {
                 if let contact = selectedContact {

@@ -510,8 +510,42 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 
     private func handleProfileRequestMessage(_ json: [String: Any], deviceId: String) {
-        logger.debug("Profile request received from \(deviceId)")
-        // Respond with our profile - this will be handled by TransportCoordinator
+        logger.info("Profile request received from \(deviceId) - responding with our profile")
+
+        // Don't respond to our own requests
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        guard deviceId != myDeviceId else {
+            logger.debug("Ignoring our own profile request")
+            return
+        }
+
+        // Get our profile from ContactsViewModel and respond
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                self.logger.info("Sending profile response: callsign=\(myProfile.callsign ?? "unknown")")
+                self.publishProfile(myProfile, deviceId: myDeviceId)
+            } else {
+                // Fallback: create minimal profile from SettingsViewModel
+                let settings = SettingsViewModel.shared
+                let profile = ContactProfile(
+                    deviceId: myDeviceId,
+                    nickname: settings.profile.nickname.isEmpty ? nil : settings.profile.nickname,
+                    callsign: settings.profile.callsign.isEmpty ? nil : settings.profile.callsign,
+                    firstName: settings.profile.firstName.isEmpty ? nil : settings.profile.firstName,
+                    lastName: settings.profile.lastName.isEmpty ? nil : settings.profile.lastName,
+                    company: settings.profile.company.isEmpty ? nil : settings.profile.company,
+                    platoon: settings.profile.platoon.isEmpty ? nil : settings.profile.platoon,
+                    squad: settings.profile.squad.isEmpty ? nil : settings.profile.squad,
+                    mobile: settings.profile.phone.isEmpty ? nil : settings.profile.phone,
+                    email: settings.profile.email.isEmpty ? nil : settings.profile.email,
+                    role: settings.profile.role
+                )
+                self.logger.info("Sending fallback profile response: callsign=\(profile.callsign ?? "unknown")")
+                self.publishProfile(profile, deviceId: myDeviceId)
+            }
+        }
     }
 
     private func handleChatMessage(_ json: [String: Any], deviceId: String) {

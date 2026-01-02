@@ -234,8 +234,9 @@ public final class ContactsViewModel: ObservableObject {
         myProfile = profile
         saveMyProfile()
 
-        // Also update in contacts list
-        upsertContact(profile)
+        // Remove own profile from contacts list if present (should only appear as "Me")
+        contacts.removeAll { $0.deviceId == profile.deviceId }
+        saveContacts()
 
         // Optionally broadcast to network
         if broadcast {

@@ -911,23 +911,43 @@ public struct MainView: View {
         }
         .allowsHitTesting(false)
         .onReceive(lineUpdateTimer) { _ in
-            // Update user location screen point at 30fps for smooth line rendering
+            // Update user location screen point for smooth line rendering
+            // Only update when not in follow mode
             guard !mapVM.followMe,
                   let mapView = MapViewRepresentable.mapViewReference else {
                 return
             }
 
             // Update user location screen point for line drawing
+            // Only update if the value has changed significantly to reduce UI churn
             if let userLocation = mapView.userLocation.location?.coordinate {
-                userLocationScreenPoint = mapView.convert(userLocation, toPointTo: nil)
+                let newPoint = mapView.convert(userLocation, toPointTo: nil)
+                if let current = userLocationScreenPoint {
+                    let dx = abs(newPoint.x - current.x)
+                    let dy = abs(newPoint.y - current.y)
+                    // Only update if moved more than 1 pixel
+                    if dx > 1 || dy > 1 {
+                        userLocationScreenPoint = newPoint
+                    }
+                } else {
+                    userLocationScreenPoint = newPoint
+                }
             }
 
             // Update crosshair position based on map center + offset
             // This ensures the HUD shows accurate crosshair coordinates
-            let mapCenter = mapView.centerCoordinate
             if abs(crosshairOffset.width) < 1 && abs(crosshairOffset.height) < 1 {
-                // Crosshair is at center - use map center directly
-                mapVM.updateCrosshairPosition(mapCenter)
+                let mapCenter = mapView.centerCoordinate
+                // Only update if position changed significantly
+                if let current = mapVM.crosshairPosition {
+                    let latDiff = abs(mapCenter.latitude - current.latitude)
+                    let lonDiff = abs(mapCenter.longitude - current.longitude)
+                    if latDiff > 0.000001 || lonDiff > 0.000001 {
+                        mapVM.updateCrosshairPosition(mapCenter)
+                    }
+                } else {
+                    mapVM.updateCrosshairPosition(mapCenter)
+                }
             }
         }
     }
