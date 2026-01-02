@@ -191,6 +191,26 @@ public final class MapViewModel: ObservableObject {
         self.zoom = zoom
     }
 
+    /// Zoom in by one level
+    public func zoomIn() {
+        let newZoom = min(zoom + 1, 20.0)
+        if let pos = cameraPosition {
+            saveCameraPosition(lat: pos.latitude, lng: pos.longitude, zoom: newZoom, bearing: pos.bearing)
+        } else {
+            self.zoom = newZoom
+        }
+    }
+
+    /// Zoom out by one level
+    public func zoomOut() {
+        let newZoom = max(zoom - 1, 1.0)
+        if let pos = cameraPosition {
+            saveCameraPosition(lat: pos.latitude, lng: pos.longitude, zoom: newZoom, bearing: pos.bearing)
+        } else {
+            self.zoom = newZoom
+        }
+    }
+
     /// Update the map bearing/rotation
     public func updateMapBearing(_ bearing: Double) {
         self.mapBearing = bearing

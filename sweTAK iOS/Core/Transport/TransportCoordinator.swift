@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 /// Coordinates message routing between UDP and MQTT transports.
 /// This is the main entry point for all network operations.
@@ -8,6 +9,10 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Singleton
 
     public static let shared = TransportCoordinator()
+
+    // MARK: - Logger
+
+    private let logger = Logger(subsystem: "com.swetak", category: "TransportCoordinator")
 
     // MARK: - Published State
 
@@ -60,14 +65,22 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Transport Management
 
     public func setMode(_ mode: TransportMode) {
-        guard mode != activeMode else { return }
+        logger.info("setMode() called: requested=\(mode.rawValue) current=\(self.activeMode.rawValue)")
+
+        guard mode != activeMode else {
+            logger.info("setMode() - mode already set, skipping")
+            return
+        }
 
         // Stop current transport
+        logger.info("Stopping current transport...")
         stopCurrentTransport()
 
         activeMode = mode
+        logger.info("activeMode changed to: \(mode.rawValue)")
 
         // Start new transport
+        logger.info("Starting new transport...")
         startCurrentTransport()
     }
 
@@ -122,20 +135,25 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     private func startMQTT() {
+        logger.info("startMQTT() called - config valid: \(self.mqttConfiguration.isValid), host: \(self.mqttConfiguration.host)")
+
         guard mqttConfiguration.isValid else {
+            logger.error("startMQTT() - invalid MQTT configuration!")
             connectionState = .error("Invalid MQTT configuration")
             return
         }
 
         // Configure and start MQTT transport
+        logger.info("Configuring MQTTClientManager...")
         let mqtt = MQTTClientManager.shared
         mqtt.configure(with: mqttConfiguration)
 
-        // Subscribe to MQTT connection state changes
-        mqtt.$isConnected
+        // Subscribe to MQTT connection state changes (full state, not just boolean)
+        mqtt.connectionState
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] connected in
-                self?.connectionState = connected ? .connected : .disconnected
+            .sink { [weak self] state in
+                self?.logger.info("MQTT connection state update: \(String(describing: state))")
+                self?.connectionState = state
             }
             .store(in: &cancellables)
 
@@ -489,12 +507,16 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Private Send
 
     private func sendMessage(_ message: NetworkMessage, to recipients: [String]? = nil) {
+        logger.info("sendMessage: type=\(message.type.rawValue) activeMode=\(self.activeMode.rawValue) connected=\(self.connectionState.isConnected)")
+
         switch activeMode {
         case .localUDP:
             // Use UDPClientManager which handles broadcast + unicast
+            logger.debug("Sending via UDP")
             UDPClientManager.shared.send(message: message, to: recipients)
         case .mqtt:
             // Use MQTTClientManager which handles topic routing internally
+            logger.info("Sending via MQTT to topic: \(MQTTTopic.topic(for: message.type))")
             MQTTClientManager.shared.send(message: message, to: recipients)
         }
     }

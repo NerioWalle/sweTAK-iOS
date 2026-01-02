@@ -94,14 +94,7 @@ public struct HudOverlay: View {
     }
 
     private func formatCoordinate(_ coord: CLLocationCoordinate2D) -> String {
-        switch coordMode {
-        case .mgrs:
-            // In a real app, would convert to MGRS format
-            // For now, show decimal with MGRS-style precision
-            return String(format: "%.5f, %.5f", coord.latitude, coord.longitude)
-        case .latLon:
-            return String(format: "%.5f, %.5f", coord.latitude, coord.longitude)
-        }
+        MapCoordinateUtils.formatCoordinate(lat: coord.latitude, lon: coord.longitude, mode: coordMode)
     }
 
     // MARK: - Altitude Formatting
@@ -243,12 +236,7 @@ public struct CompactHud: View {
         guard let pos = position else {
             return "No position"
         }
-        switch coordMode {
-        case .mgrs:
-            return String(format: "%.5f, %.5f", pos.latitude, pos.longitude)
-        case .latLon:
-            return String(format: "%.5f, %.5f", pos.latitude, pos.longitude)
-        }
+        return MapCoordinateUtils.formatCoordinate(lat: pos.latitude, lon: pos.longitude, mode: coordMode)
     }
 }
 

@@ -4,7 +4,6 @@ import SwiftUI
 /// Mirrors Android SettingsScreen functionality
 public struct SettingsScreen: View {
     @ObservedObject private var settingsVM = SettingsViewModel.shared
-    @ObservedObject private var profileVM = ProfileViewModel.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showingResetAlert = false
     @State private var showingAdvancedMqtt = false
@@ -14,9 +13,6 @@ public struct SettingsScreen: View {
     public var body: some View {
         NavigationStack {
             Form {
-                // Profile section
-                profileSection
-
                 // Appearance section
                 appearanceSection
 
@@ -29,14 +25,12 @@ public struct SettingsScreen: View {
                 // Transport section
                 transportSection
 
-                // MQTT section (when MQTT transport is selected)
-                if settingsVM.transportMode == .mqtt {
-                    mqttSection
+                // MQTT section - always visible so users can configure
+                mqttSection
 
-                    // Advanced MQTT (collapsible)
-                    if showingAdvancedMqtt {
-                        advancedMqttSection
-                    }
+                // Advanced MQTT (collapsible)
+                if showingAdvancedMqtt {
+                    advancedMqttSection
                 }
 
                 // GPS section
@@ -69,68 +63,6 @@ public struct SettingsScreen: View {
         }
     }
 
-    // MARK: - Profile Section
-
-    private var profileSection: some View {
-        Section {
-            // Callsign
-            HStack {
-                Image(systemName: "person.fill")
-                    .foregroundColor(.blue)
-                    .frame(width: 24)
-                Text("Callsign")
-                Spacer()
-                Text(profileVM.callsign)
-                    .foregroundColor(.secondary)
-            }
-
-            // Nickname
-            if !profileVM.profile.nickname.isEmpty {
-                HStack {
-                    Image(systemName: "tag.fill")
-                        .foregroundColor(.orange)
-                        .frame(width: 24)
-                    Text("Nickname")
-                    Spacer()
-                    Text(profileVM.profile.nickname)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            // Role
-            if profileVM.profile.role != .none {
-                HStack {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(.yellow)
-                        .frame(width: 24)
-                    Text("Role")
-                    Spacer()
-                    Text(profileVM.profile.role.displayName)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            // Edit profile link
-            NavigationLink {
-                ProfileEditView()
-            } label: {
-                HStack {
-                    Image(systemName: "pencil")
-                        .foregroundColor(.blue)
-                        .frame(width: 24)
-                    Text("Edit Profile")
-                }
-            }
-        } header: {
-            Text("Profile")
-        } footer: {
-            if !profileVM.isConfigured {
-                Text("Configure your callsign to be identified on the network")
-                    .foregroundColor(.orange)
-            }
-        }
-    }
-
     // MARK: - Appearance Section
 
     private var appearanceSection: some View {
@@ -144,15 +76,17 @@ public struct SettingsScreen: View {
 
     // MARK: - Map Section
 
+    @State private var mapTilerApiKey: String = ""
+
     private var mapSection: some View {
         Section("Map") {
-            // Map style picker
+            // Map style picker - using full MapStyle enum
             Picker("Map Style", selection: Binding(
-                get: { settingsVM.settings.mapStyle },
-                set: { settingsVM.setMapStyle($0) }
+                get: { settingsVM.currentMapStyle },
+                set: { settingsVM.setFullMapStyle($0) }
             )) {
                 ForEach(MapStyle.allCases, id: \.self) { style in
-                    Text(style.displayName).tag(style)
+                    Label(style.displayName, systemImage: style.icon).tag(style)
                 }
             }
 
@@ -176,6 +110,18 @@ public struct SettingsScreen: View {
                     Circle()
                         .fill(settingsVM.breadcrumbColor)
                         .frame(width: 24, height: 24)
+                }
+            }
+
+            // MapTiler API Key
+            NavigationLink {
+                MapTilerSettingsView()
+            } label: {
+                HStack {
+                    Text("MapTiler Cloud")
+                    Spacer()
+                    Text(settingsVM.mapTilerSettings.isValid ? "Configured" : "Not Set")
+                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -271,10 +217,10 @@ public struct SettingsScreen: View {
             HStack {
                 Text("Port")
                 Spacer()
-                TextField("8883", value: Binding(
-                    get: { settingsVM.mqttSettings.port },
-                    set: { updateMqttPort($0) }
-                ), format: .number)
+                TextField("8883", text: Binding(
+                    get: { String(settingsVM.mqttSettings.port) },
+                    set: { if let port = Int($0) { updateMqttPort(port) } }
+                ))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 100)
                 .keyboardType(.numberPad)
@@ -326,22 +272,31 @@ public struct SettingsScreen: View {
 
             // Connect/Disconnect button
             Button(action: {
+                print(">>> CONNECT BUTTON PRESSED - isConnected: \(settingsVM.isConnected), isValid: \(settingsVM.mqttSettings.isValid)")
                 if settingsVM.isConnected {
+                    print(">>> Calling disconnectMQTT()")
                     settingsVM.disconnectMQTT()
                 } else {
+                    print(">>> Calling connectMQTT() with host: \(settingsVM.mqttSettings.host)")
                     settingsVM.connectMQTT()
                 }
             }) {
                 HStack {
                     Spacer()
-                    Text(settingsVM.isConnected ? "Disconnect" : "Connect")
+                    if case .connecting = settingsVM.connectionState {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.8)
+                            .padding(.trailing, 8)
+                    }
+                    Text(buttonText)
                         .fontWeight(.semibold)
                     Spacer()
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(settingsVM.isConnected ? .red : .blue)
-            .disabled(!settingsVM.mqttSettings.isValid && !settingsVM.isConnected)
+            .tint(buttonColor)
+            .disabled(isButtonDisabled)
 
             // Show advanced toggle
             Button(action: {
@@ -358,13 +313,61 @@ public struct SettingsScreen: View {
                 }
             }
         } header: {
-            Text("MQTT Configuration")
+            HStack {
+                Text("MQTT Configuration")
+                Spacer()
+                // Connection status indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(connectionStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(settingsVM.connectionStateDescription)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
         } footer: {
             if !settingsVM.mqttSettings.isValid {
                 Text("Enter a valid host to connect")
                     .foregroundColor(.orange)
+            } else if case .error(let msg) = settingsVM.connectionState {
+                Text("Error: \(msg)")
+                    .foregroundColor(.red)
             }
         }
+    }
+
+    private var connectionStatusColor: Color {
+        switch settingsVM.connectionState {
+        case .connected: return .green
+        case .connecting: return .orange
+        case .disconnected: return .gray
+        case .error: return .red
+        }
+    }
+
+    private var buttonText: String {
+        switch settingsVM.connectionState {
+        case .connected: return "Disconnect"
+        case .connecting: return "Connecting..."
+        case .disconnected: return "Connect"
+        case .error: return "Retry"
+        }
+    }
+
+    private var buttonColor: Color {
+        switch settingsVM.connectionState {
+        case .connected: return .red
+        case .connecting: return .orange
+        case .disconnected, .error: return .blue
+        }
+    }
+
+    private var isButtonDisabled: Bool {
+        if case .connecting = settingsVM.connectionState {
+            return true
+        }
+        return !settingsVM.mqttSettings.isValid && !settingsVM.isConnected
     }
 
     // MARK: - GPS Section
@@ -708,6 +711,66 @@ struct ProfileEditView: View {
     }
 }
 
+// MARK: - MapTiler Settings View
+
+/// View for configuring MapTiler Cloud API key
+struct MapTilerSettingsView: View {
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var apiKey: String = ""
+
+    var body: some View {
+        Form {
+            Section {
+                SecureField("API Key", text: $apiKey)
+                    .textContentType(.password)
+                    .autocapitalization(.none)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("MapTiler Cloud API Key")
+            } footer: {
+                Text("Get your free API key at maptiler.com/cloud\n\nMapTiler provides high-quality terrain, outdoor, and topographic map tiles.")
+            }
+
+            Section {
+                Button("Save API Key") {
+                    settingsVM.setMapTilerApiKey(apiKey)
+                    dismiss()
+                }
+                .disabled(apiKey.isEmpty)
+
+                if settingsVM.mapTilerSettings.isValid {
+                    Button("Clear API Key", role: .destructive) {
+                        settingsVM.setMapTilerApiKey("")
+                        apiKey = ""
+                    }
+                }
+            }
+
+            if settingsVM.mapTilerSettings.isValid {
+                Section {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("MapTiler is configured")
+                    }
+
+                    Text("Terrain, Outdoor, and Topographic map styles will now use MapTiler Cloud tiles.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } header: {
+                    Text("Status")
+                }
+            }
+        }
+        .navigationTitle("MapTiler Cloud")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            apiKey = settingsVM.mapTilerSettings.apiKey
+        }
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
@@ -717,5 +780,11 @@ struct ProfileEditView: View {
 #Preview("Profile Edit") {
     NavigationStack {
         ProfileEditView()
+    }
+}
+
+#Preview("MapTiler Settings") {
+    NavigationStack {
+        MapTilerSettingsView()
     }
 }

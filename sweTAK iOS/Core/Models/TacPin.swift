@@ -133,21 +133,26 @@ public struct NatoPin: Codable, Identifiable, Equatable {
     public static func fromJSON(_ json: [String: Any]) -> NatoPin? {
         guard let id = json["id"] as? Int64 ?? (json["id"] as? Int).map({ Int64($0) }),
               let lat = json["lat"] as? Double,
-              let lon = json["lon"] as? Double,
-              let title = json["title"] as? String else {
+              let lon = json["lon"] as? Double else {
             return nil
         }
+
+        // Title is optional - use empty string if not present
+        let title = json["title"] as? String ?? ""
+
+        // Support both "natoType" (MQTT protocol) and "type" (internal) field names
+        let typeString = json["natoType"] as? String ?? json["type"] as? String
 
         return NatoPin(
             id: id,
             latitude: lat,
             longitude: lon,
-            type: NatoType.parse(json["type"] as? String),
+            type: NatoType.parse(typeString),
             title: title,
             description: json["description"] as? String ?? "",
-            authorCallsign: json["authorCallsign"] as? String ?? "",
-            createdAtMillis: json["createdAtMillis"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000),
-            originDeviceId: json["originDeviceId"] as? String ?? "",
+            authorCallsign: json["authorCallsign"] as? String ?? json["callsign"] as? String ?? "",
+            createdAtMillis: json["createdAtMillis"] as? Int64 ?? json["ts"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000),
+            originDeviceId: json["originDeviceId"] as? String ?? json["deviceId"] as? String ?? "",
             photoUri: json["photoUri"] as? String
         )
     }

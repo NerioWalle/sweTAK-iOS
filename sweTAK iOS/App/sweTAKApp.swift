@@ -17,8 +17,23 @@ public struct sweTAKApp: App {
                 .environmentObject(appState)
                 .preferredColorScheme(colorScheme)
                 .onAppear {
-                    // Start transport coordinator
-                    TransportCoordinator.shared.start()
+                    // Apply saved transport settings before starting
+                    let settings = SettingsViewModel.shared
+                    if settings.transportMode == .mqtt && settings.mqttSettings.isValid {
+                        // Apply MQTT configuration
+                        let config = MQTTConfiguration(
+                            host: settings.mqttSettings.host,
+                            port: settings.mqttSettings.port,
+                            useTLS: settings.mqttSettings.useTls,
+                            username: settings.mqttSettings.username.isEmpty ? nil : settings.mqttSettings.username,
+                            password: settings.mqttSettings.password.isEmpty ? nil : settings.mqttSettings.password
+                        )
+                        TransportCoordinator.shared.mqttConfiguration = config
+                        TransportCoordinator.shared.setMode(.mqtt)
+                    } else {
+                        // Start with UDP (default)
+                        TransportCoordinator.shared.start()
+                    }
 
                     // Start listening for orders
                     OrdersViewModel.shared.startListening(deviceId: TransportCoordinator.shared.deviceId)

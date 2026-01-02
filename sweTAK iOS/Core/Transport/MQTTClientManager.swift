@@ -3,7 +3,8 @@ import Combine
 import CocoaMQTT
 import os.log
 
-/// MQTT client manager for iOS using CocoaMQTT
+/// MQTT client manager for iOS using CocoaMQTT (MQTT 3.1.1)
+/// Note: Using MQTT 3.1.1 for better compatibility with most brokers
 public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObject {
 
     // MARK: - Singleton
@@ -36,8 +37,10 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     private var maxMessageAgeMinutes: Int = 360  // 6 hours default
 
     // MARK: - MQTT Client
+    // Using MQTT 3.1.1 (CocoaMQTT) as primary - more universally supported
+    // MQTT 5.0 (CocoaMQTT5) available as fallback
 
-    private var mqtt: CocoaMQTT5?
+    private var mqtt: CocoaMQTT?
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Message Handlers
@@ -78,7 +81,44 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
     public func send(message: NetworkMessage, to recipients: [String]?) {
         let topic = MQTTTopic.topic(for: message.type)
-        publish(message: message, to: topic)
+
+        logger.info("send() called: type=\(message.type.rawValue) topic=\(topic)")
+
+        // Create a flat JSON structure (payload fields at top level) for MQTT
+        // This matches the format expected by Android and the message handlers
+        var flatJson: [String: Any] = [
+            "type": message.type.rawValue,
+            "deviceId": message.deviceId,
+            "ts": message.timestamp
+        ]
+
+        // Merge payload fields into top level
+        for (key, value) in message.payload {
+            // Map some field names to match Android protocol
+            switch key {
+            case "type":
+                // Pin type uses "natoType" to avoid collision with message type
+                flatJson["natoType"] = value
+            default:
+                flatJson[key] = value
+            }
+        }
+
+        // Add timestamp variants for compatibility
+        if let createdAt = message.payload["createdAtMillis"] {
+            flatJson["createdAtMillis"] = createdAt
+        }
+
+        do {
+            let data = try JSONSerialization.data(withJSONObject: flatJson, options: [])
+            guard let jsonString = String(data: data, encoding: .utf8) else {
+                logger.error("Failed to convert JSON data to string")
+                return
+            }
+            publish(json: jsonString, to: topic)
+        } catch {
+            logger.error("Failed to serialize message: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Configuration
@@ -95,6 +135,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     /// Connect to the MQTT broker
     public func connect(with config: MQTTConfiguration) {
         logger.info("connect() called: host=\(config.host) port=\(config.port) tls=\(config.useTLS)")
+        print(">>> MQTT connect(): host=\(config.host) port=\(config.port) tls=\(config.useTLS)")
 
         configuration = config
 
@@ -106,32 +147,46 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
         _connectionState = .connecting
 
-        // Create MQTT 5 client
+        // Create MQTT 3.1.1 client (most universally supported)
         let clientId = config.clientId.isEmpty ? "swetak-ios-\(UUID().uuidString.prefix(8))" : config.clientId
-        let mqtt5 = CocoaMQTT5(clientID: clientId, host: config.host, port: UInt16(config.port))
+        print(">>> MQTT: Creating MQTT 3.1.1 client with ID: \(clientId)")
+
+        let mqttClient = CocoaMQTT(clientID: clientId, host: config.host, port: UInt16(config.port))
 
         // Configure connection options
-        mqtt5.username = config.username
-        mqtt5.password = config.password
-        mqtt5.keepAlive = 60
-        mqtt5.autoReconnect = true
-        mqtt5.autoReconnectTimeInterval = 5
-        mqtt5.cleanSession = true
+        mqttClient.username = config.username
+        mqttClient.password = config.password
+        mqttClient.keepAlive = 60
+        mqttClient.autoReconnect = true
+        mqttClient.autoReconnectTimeInterval = 5
+        mqttClient.cleanSession = true
+
+        print(">>> MQTT: Username=\(config.username ?? "nil") Password=\(config.password != nil ? "(set)" : "nil")")
 
         // TLS configuration
-        mqtt5.enableSSL = config.useTLS
+        mqttClient.enableSSL = config.useTLS
         if config.useTLS {
-            mqtt5.allowUntrustCACertificate = false  // Use system trust store
+            // Allow untrusted certificates for servers with self-signed certs
+            mqttClient.allowUntrustCACertificate = true
+
+            print(">>> MQTT: TLS enabled with allowUntrustCACertificate=true")
+            logger.info("TLS enabled with allowUntrustCACertificate=true")
         }
 
         // Set delegate
-        mqtt5.delegate = self
+        mqttClient.delegate = self
 
-        self.mqtt = mqtt5
+        self.mqtt = mqttClient
 
         // Attempt connection
-        let result = mqtt5.connect()
-        if !result {
+        print(">>> MQTT: Initiating MQTT 3.1.1 connection to \(config.host):\(config.port) TLS=\(config.useTLS)")
+        logger.info("Initiating connection to \(config.host):\(config.port)...")
+        let result = mqttClient.connect()
+        if result {
+            print(">>> MQTT: Connection initiated, waiting for CONNACK...")
+            logger.info("Connection initiated successfully, waiting for CONNACK...")
+        } else {
+            print(">>> MQTT: Failed to initiate connection!")
             logger.error("connect() failed to initiate connection")
             _connectionState = .error("Failed to initiate MQTT connection")
         }
@@ -160,8 +215,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
             logger.debug("Publishing to \(topic): \(payload.prefix(100))...")
 
-            let properties = MqttPublishProperties()
-            mqtt.publish(topic, withString: payload, qos: qos, retained: retained, properties: properties)
+            mqtt.publish(topic, withString: payload, qos: qos, retained: retained)
         } catch {
             logger.error("publish() failed to serialize message: \(error.localizedDescription)")
         }
@@ -169,15 +223,20 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
     /// Publish raw JSON string to a topic
     public func publish(json: String, to topic: String, qos: CocoaMQTTQoS = .qos1, retained: Bool = false) {
-        guard let mqtt = mqtt, isConnected else {
-            logger.warning("publish(json:) aborted: not connected")
+        guard let mqtt = mqtt else {
+            logger.error("publish(json:) aborted: mqtt client is nil")
             return
         }
 
-        logger.debug("Publishing to \(topic): \(json.prefix(100))...")
+        guard isConnected else {
+            logger.warning("publish(json:) aborted: not connected (state: \(String(describing: self._connectionState)))")
+            return
+        }
 
-        let properties = MqttPublishProperties()
-        mqtt.publish(topic, withString: json, qos: qos, retained: retained, properties: properties)
+        logger.info("Publishing to \(topic): \(json.prefix(200))...")
+
+        mqtt.publish(topic, withString: json, qos: qos, retained: retained)
+        logger.debug("Publish call completed for topic: \(topic)")
     }
 
     /// Publish position update
@@ -834,74 +893,111 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 }
 
-// MARK: - CocoaMQTT5Delegate
+// MARK: - CocoaMQTTDelegate (MQTT 3.1.1)
 
-extension MQTTClientManager: CocoaMQTT5Delegate {
+extension MQTTClientManager: CocoaMQTTDelegate {
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didConnectAck ack: CocoaMQTTCONNACKReasonCode, connAckData: MqttDecodeConnAck?) {
-        logger.info("Connected with ack: \(String(describing: ack))")
+    public func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
+        print(">>> MQTT: didConnectAck - ack=\(ack)")
+        logger.info("Connected with ack: \(String(describing: ack), privacy: .public)")
 
-        if ack == .success {
+        if ack == .accept {
+            print(">>> MQTT: Connection successful!")
             _connectionState = .connected
             subscribeToAllTopics()
         } else {
-            _connectionState = .error("Connection rejected: \(ack)")
+            let errorMsg: String
+            switch ack {
+            case .unacceptableProtocolVersion:
+                errorMsg = "Unacceptable protocol version"
+            case .identifierRejected:
+                errorMsg = "Client identifier rejected"
+            case .serverUnavailable:
+                errorMsg = "Server unavailable"
+            case .badUsernameOrPassword:
+                errorMsg = "Bad username or password"
+            case .notAuthorized:
+                errorMsg = "Not authorized"
+            default:
+                errorMsg = "Connection rejected: \(ack)"
+            }
+            print(">>> MQTT: Connection rejected: \(errorMsg)")
+            _connectionState = .error(errorMsg)
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishMessage message: CocoaMQTT5Message, id: UInt16) {
+    public func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {
         logger.debug("Message published: \(id)")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishAck id: UInt16, pubAckData: MqttDecodePubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didPublishAck id: UInt16) {
         logger.debug("Publish ack: \(id)")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishRec id: UInt16, pubRecData: MqttDecodePubRec?) {
-        logger.debug("Publish rec: \(id)")
-    }
-
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveMessage message: CocoaMQTT5Message, id: UInt16, publishData: MqttDecodePublish?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didReceiveMessage message: CocoaMQTTMessage, id: UInt16) {
         let topic = message.topic
         let payload = message.payload
 
         handleMessage(topic: topic, payload: Data(payload))
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didSubscribeTopics success: NSDictionary, failed: [String], subAckData: MqttDecodeSubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didSubscribeTopics success: NSDictionary, failed: [String]) {
         logger.info("Subscribed to topics: \(success.allKeys)")
+        print(">>> MQTT: Subscribed to topics: \(success.allKeys)")
         if !failed.isEmpty {
             logger.warning("Failed to subscribe to: \(failed)")
+            print(">>> MQTT: Failed to subscribe to: \(failed)")
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didUnsubscribeTopics topics: [String], unsubAckData: MqttDecodeUnsubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didUnsubscribeTopics topics: [String]) {
         logger.info("Unsubscribed from: \(topics)")
     }
 
-    public func mqtt5DidPing(_ mqtt5: CocoaMQTT5) {
+    public func mqttDidPing(_ mqtt: CocoaMQTT) {
         logger.debug("Ping sent")
     }
 
-    public func mqtt5DidReceivePong(_ mqtt5: CocoaMQTT5) {
+    public func mqttDidReceivePong(_ mqtt: CocoaMQTT) {
         logger.debug("Pong received")
     }
 
-    public func mqtt5DidDisconnect(_ mqtt5: CocoaMQTT5, withError err: Error?) {
+    public func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
         if let error = err {
-            logger.error("Disconnected with error: \(error.localizedDescription)")
-            _connectionState = .error("Disconnected: \(error.localizedDescription)")
+            let errorMsg = error.localizedDescription
+            // Use print for non-redacted output
+            print(">>> MQTT Disconnected with error: \(errorMsg)")
+            print(">>> Error details: \(error)")
+            print(">>> Error type: \(type(of: error))")
+            if let nsError = error as NSError? {
+                print(">>> NSError domain: \(nsError.domain), code: \(nsError.code)")
+                print(">>> NSError userInfo: \(nsError.userInfo)")
+            }
+            logger.error("Disconnected with error: \(errorMsg, privacy: .public)")
+            _connectionState = .error(errorMsg)
         } else {
-            logger.info("Disconnected")
+            print(">>> MQTT: Disconnected normally (no error)")
+            logger.info("Disconnected normally")
             _connectionState = .disconnected
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveDisconnectReasonCode reasonCode: CocoaMQTTDISCONNECTReasonCode) {
-        logger.warning("Received disconnect reason: \(String(describing: reasonCode))")
+    public func mqtt(_ mqtt: CocoaMQTT, didStateChangeTo state: CocoaMQTTConnState) {
+        print(">>> MQTT: State changed to: \(state)")
+        logger.info("MQTT state changed to: \(String(describing: state))")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveAuthReasonCode reasonCode: CocoaMQTTAUTHReasonCode) {
-        logger.debug("Auth reason code: \(String(describing: reasonCode))")
+    public func mqtt(_ mqtt: CocoaMQTT, didReceive trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
+        print(">>> MQTT: Received SSL trust challenge")
+
+        // Get certificate info for debugging
+        if let serverCert = SecTrustGetCertificateAtIndex(trust, 0) {
+            let summary = SecCertificateCopySubjectSummary(serverCert) as String? ?? "unknown"
+            print(">>> MQTT: Server certificate: \(summary)")
+        }
+
+        // Accept all certificates for this server
+        print(">>> MQTT: Accepting certificate")
+        completionHandler(true)
     }
 }

@@ -122,6 +122,13 @@ public final class PinsViewModel: ObservableObject {
         TransportCoordinator.shared.deletePin(pinId: pinId, originDeviceId: deviceId)
     }
 
+    /// Clear all pins
+    public func clearAllPins() {
+        pins.removeAll()
+        savePins()
+        logger.debug("Cleared all pins")
+    }
+
     /// Get a pin by ID
     public func getPin(byId pinId: Int64) -> NatoPin? {
         pins.first { $0.id == pinId }

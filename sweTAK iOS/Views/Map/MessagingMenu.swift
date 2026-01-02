@@ -50,9 +50,6 @@ public struct MessagingMenuButton: View {
                 .font(.title2)
                 .foregroundColor(.primary)
                 .frame(width: 44, height: 44)
-                .background(.regularMaterial)
-                .clipShape(Circle())
-                .shadow(radius: 2)
         }
     }
 

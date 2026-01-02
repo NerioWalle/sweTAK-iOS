@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import CoreLocation
 
 // MARK: - Coordinate Input Dialog
 
@@ -166,19 +168,25 @@ public struct PinViewDialog: View {
     @Binding var isPresented: Bool
     let onSaveToPhotos: ((String) -> Void)?
     let onSaveToFiles: ((String) -> Void)?
+    let onEdit: (() -> Void)?
+    let onDelete: (() -> Void)?
 
     public init(
         pin: NatoPin,
-        coordMode: CoordMode = .mgrs,
         isPresented: Binding<Bool>,
+        coordMode: CoordMode = .mgrs,
         onSaveToPhotos: ((String) -> Void)? = nil,
-        onSaveToFiles: ((String) -> Void)? = nil
+        onSaveToFiles: ((String) -> Void)? = nil,
+        onEdit: (() -> Void)? = nil,
+        onDelete: (() -> Void)? = nil
     ) {
         self.pin = pin
         self.coordMode = coordMode
         self._isPresented = isPresented
         self.onSaveToPhotos = onSaveToPhotos
         self.onSaveToFiles = onSaveToFiles
+        self.onEdit = onEdit
+        self.onDelete = onDelete
     }
 
     public var body: some View {
@@ -267,9 +275,30 @@ public struct PinViewDialog: View {
             .navigationTitle("Pin Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") {
-                        isPresented = false
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if onDelete != nil {
+                        Button(role: .destructive) {
+                            onDelete?()
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack {
+                        if onEdit != nil {
+                            Button {
+                                onEdit?()
+                            } label: {
+                                Image(systemName: "pencil")
+                            }
+                        }
+
+                        Button("Close") {
+                            isPresented = false
+                        }
                     }
                 }
             }
@@ -496,6 +525,181 @@ public struct PinDeleteConfirmation: View {
         ),
         isPresented: .constant(true)
     )
+}
+
+// MARK: - Photo Capture View
+
+/// A view that presents the camera for capturing geotagged photos
+public struct PhotoCaptureView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let coordinate: CLLocationCoordinate2D
+    let onCapture: (UIImage, CLLocationCoordinate2D?, String, String) -> Void
+
+    @State private var showingCamera = false
+    @State private var capturedImage: UIImage?
+    @State private var subject: String = ""
+    @State private var description: String = ""
+
+    @FocusState private var focusedField: Field?
+    private enum Field: Hashable {
+        case subject, description
+    }
+
+    public init(
+        coordinate: CLLocationCoordinate2D,
+        onCapture: @escaping (UIImage, CLLocationCoordinate2D?, String, String) -> Void
+    ) {
+        self.coordinate = coordinate
+        self.onCapture = onCapture
+    }
+
+    public var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    if let image = capturedImage {
+                        // Show captured image
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 250)
+                            .cornerRadius(12)
+
+                        Text("Location: \(String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        // Subject and description fields
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Subject")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField("Enter subject", text: $subject)
+                                    .textFieldStyle(.roundedBorder)
+                                    .focused($focusedField, equals: .subject)
+                                    .submitLabel(.next)
+                                    .onSubmit { focusedField = .description }
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Description")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                TextField("Enter description", text: $description, axis: .vertical)
+                                    .textFieldStyle(.roundedBorder)
+                                    .lineLimit(3...5)
+                                    .focused($focusedField, equals: .description)
+                            }
+                        }
+                        .padding(.horizontal)
+
+                        HStack(spacing: 20) {
+                            Button("Retake") {
+                                capturedImage = nil
+                                showingCamera = true
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Save Photo") {
+                                onCapture(image, coordinate, subject, description)
+                                dismiss()
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    } else {
+                        // Show camera prompt
+                        VStack(spacing: 16) {
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.secondary)
+
+                            Text("Take a geotagged photo at this location")
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+
+                            Text(String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Button {
+                                showingCamera = true
+                            } label: {
+                                Label("Open Camera", systemImage: "camera")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .padding(.top)
+                        }
+                        .padding()
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Capture Photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingCamera) {
+                CameraViewWrapper { image in
+                    capturedImage = image
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Camera View Wrapper
+
+struct CameraViewWrapper: UIViewControllerRepresentable {
+    let onCapture: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> CameraCoordinator {
+        CameraCoordinator(onCapture: onCapture)
+    }
+}
+
+class CameraCoordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    let onCapture: (UIImage) -> Void
+
+    init(onCapture: @escaping (UIImage) -> Void) {
+        self.onCapture = onCapture
+    }
+
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        if let image = info[.originalImage] as? UIImage {
+            onCapture(image)
+        }
+        picker.dismiss(animated: true)
+    }
+
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
+    }
+}
+
+#Preview("Photo Capture") {
+    PhotoCaptureView(
+        coordinate: CLLocationCoordinate2D(latitude: 59.33, longitude: 18.06)
+    ) { image, location, subject, description in
+        print("Captured photo at \(String(describing: location)) - Subject: \(subject)")
+    }
 }
 
 #Preview("Pin Create") {

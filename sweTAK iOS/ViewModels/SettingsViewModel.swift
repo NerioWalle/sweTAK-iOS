@@ -85,6 +85,33 @@ public struct MQTTSettings: Codable, Equatable {
     }
 }
 
+/// MapTiler Cloud settings
+public struct MapTilerSettings: Codable, Equatable {
+    public var apiKey: String = ""
+
+    public init() {}
+
+    public var isValid: Bool {
+        !apiKey.isEmpty
+    }
+
+    /// Get tile URL for a given style
+    public func tileURL(for style: MapTilerStyle) -> String? {
+        guard isValid else { return nil }
+        return "https://api.maptiler.com/maps/\(style.rawValue)/{z}/{x}/{y}.png?key=\(apiKey)"
+    }
+}
+
+/// MapTiler map styles
+public enum MapTilerStyle: String {
+    case streets = "streets-v2"
+    case satellite = "satellite"
+    case hybrid = "hybrid"
+    case terrain = "terrain"
+    case outdoor = "outdoor-v2"
+    case topographic = "topo-v2"
+}
+
 /// ViewModel for managing app settings
 /// Mirrors Android SettingsViewModel functionality
 public final class SettingsViewModel: ObservableObject {
@@ -102,7 +129,19 @@ public final class SettingsViewModel: ObservableObject {
     @Published public private(set) var settings = SettingsState()
     @Published public private(set) var transportMode: TransportMode = .localUDP
     @Published public private(set) var mqttSettings = MQTTSettings()
+    @Published public private(set) var mapTilerSettings = MapTilerSettings()
     @Published public private(set) var profile = LocalProfile()
+
+    // MARK: - Lighting State
+
+    @Published public var themeMode: ThemeMode = .dark
+    @Published public var nightVisionColor: NightVisionColor = .red
+    @Published public var nightDimmerAlpha: Float = 0.5
+
+    // MARK: - Connection State (Observable)
+
+    @Published public private(set) var connectionState: ConnectionState = .disconnected
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Device ID
 
@@ -126,6 +165,7 @@ public final class SettingsViewModel: ObservableObject {
         static let settings = "swetak_settings"
         static let transportMode = "swetak_transport_mode"
         static let mqttSettings = "swetak_mqtt_settings"
+        static let mapTilerSettings = "swetak_maptiler_settings"
         static let profile = "swetak_profile"
         static let deviceId = "swetak_device_id"
     }
@@ -134,6 +174,17 @@ public final class SettingsViewModel: ObservableObject {
 
     private init() {
         loadFromStorage()
+        setupConnectionStateObserver()
+    }
+
+    private func setupConnectionStateObserver() {
+        TransportCoordinator.shared.$connectionState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.connectionState = state
+                self?.logger.debug("Connection state changed: \(String(describing: state))")
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Storage
@@ -155,6 +206,12 @@ public final class SettingsViewModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: Keys.mqttSettings),
            let stored = try? JSONDecoder().decode(MQTTSettings.self, from: data) {
             mqttSettings = stored
+        }
+
+        // Load MapTiler settings
+        if let data = UserDefaults.standard.data(forKey: Keys.mapTilerSettings),
+           let stored = try? JSONDecoder().decode(MapTilerSettings.self, from: data) {
+            mapTilerSettings = stored
         }
 
         // Load profile
@@ -179,6 +236,12 @@ public final class SettingsViewModel: ObservableObject {
     private func saveMQTTSettings() {
         if let data = try? JSONEncoder().encode(mqttSettings) {
             UserDefaults.standard.set(data, forKey: Keys.mqttSettings)
+        }
+    }
+
+    private func saveMapTilerSettings() {
+        if let data = try? JSONEncoder().encode(mapTilerSettings) {
+            UserDefaults.standard.set(data, forKey: Keys.mapTilerSettings)
         }
     }
 
@@ -238,11 +301,32 @@ public final class SettingsViewModel: ObservableObject {
         saveSettings()
     }
 
-    /// Set map style
+    /// Set map style (legacy)
     public func setMapStyle(_ style: SettingsMapStyle) {
         settings.mapStyle = style
         saveSettings()
         logger.debug("Map style set to: \(style.rawValue)")
+    }
+
+    // MARK: - Full Map Style Support
+
+    /// Current full map style
+    @Published public var currentMapStyle: MapStyle = .standard
+
+    /// Set full map style (all 6 options)
+    public func setFullMapStyle(_ style: MapStyle) {
+        currentMapStyle = style
+        // Also update the legacy setting for compatibility
+        switch style {
+        case .satellite, .hybrid:
+            settings.mapStyle = .satellite
+        case .terrain, .outdoor, .topographic:
+            settings.mapStyle = .terrain
+        case .standard:
+            settings.mapStyle = .streets
+        }
+        saveSettings()
+        logger.debug("Full map style set to: \(style.rawValue)")
     }
 
     /// Set breadcrumb color
@@ -279,13 +363,15 @@ public final class SettingsViewModel: ObservableObject {
 
     /// Set transport mode
     public func setTransportMode(_ mode: TransportMode) {
+        logger.info("setTransportMode() called with mode: \(mode.rawValue)")
         transportMode = mode
         saveTransportMode()
 
         // Apply to TransportCoordinator
+        logger.info("Calling TransportCoordinator.setMode(\(mode.rawValue))")
         TransportCoordinator.shared.setMode(mode)
 
-        logger.info("Transport mode changed to: \(mode.rawValue)")
+        logger.info("Transport mode changed to: \(mode.rawValue), coordinator activeMode: \(TransportCoordinator.shared.activeMode.rawValue)")
     }
 
     /// Update MQTT settings
@@ -293,8 +379,9 @@ public final class SettingsViewModel: ObservableObject {
         mqttSettings = newSettings
         saveMQTTSettings()
 
-        // Apply to TransportCoordinator if MQTT is active
+        // If MQTT is active and settings changed, reconnect with new settings
         if transportMode == .mqtt && mqttSettings.isValid {
+            logger.info("MQTT settings changed while connected - reconnecting...")
             let config = MQTTConfiguration(
                 host: mqttSettings.host,
                 port: mqttSettings.port,
@@ -303,15 +390,57 @@ public final class SettingsViewModel: ObservableObject {
                 password: mqttSettings.password.isEmpty ? nil : mqttSettings.password
             )
             TransportCoordinator.shared.mqttConfiguration = config
+            // Force reconnection by switching modes
+            TransportCoordinator.shared.setMode(.localUDP)
+            TransportCoordinator.shared.setMode(.mqtt)
         }
 
         logger.info("MQTT settings updated: host=\(newSettings.host)")
     }
 
+    /// Update MapTiler settings
+    public func updateMapTilerSettings(_ newSettings: MapTilerSettings) {
+        mapTilerSettings = newSettings
+        saveMapTilerSettings()
+        logger.info("MapTiler settings updated: apiKey=\(newSettings.apiKey.isEmpty ? "(empty)" : "(set)")")
+    }
+
+    /// Update MapTiler API key
+    public func setMapTilerApiKey(_ apiKey: String) {
+        mapTilerSettings.apiKey = apiKey
+        saveMapTilerSettings()
+        logger.info("MapTiler API key updated")
+    }
+
+    /// Get the MapTiler style URL for a given map style
+    public func mapTilerURL(for style: MapStyle) -> String? {
+        guard mapTilerSettings.isValid else { return nil }
+
+        let tilerStyle: MapTilerStyle
+        switch style {
+        case .standard:
+            tilerStyle = .streets
+        case .satellite:
+            return nil // Use Apple's satellite
+        case .hybrid:
+            tilerStyle = .hybrid
+        case .terrain:
+            tilerStyle = .terrain
+        case .outdoor:
+            tilerStyle = .outdoor
+        case .topographic:
+            tilerStyle = .topographic
+        }
+
+        return mapTilerSettings.tileURL(for: tilerStyle)
+    }
+
     /// Connect to MQTT with current settings
     public func connectMQTT() {
+        logger.info("connectMQTT() called - host: \(self.mqttSettings.host), port: \(self.mqttSettings.port), useTLS: \(self.mqttSettings.useTls)")
+
         guard mqttSettings.isValid else {
-            logger.warning("Cannot connect MQTT: invalid settings")
+            logger.warning("Cannot connect MQTT: invalid settings (host empty or port invalid)")
             return
         }
 
@@ -323,8 +452,10 @@ public final class SettingsViewModel: ObservableObject {
             password: mqttSettings.password.isEmpty ? nil : mqttSettings.password
         )
 
+        logger.info("Setting MQTT configuration and switching to MQTT mode")
         TransportCoordinator.shared.mqttConfiguration = config
         setTransportMode(.mqtt)
+        logger.info("connectMQTT() completed - transport mode is now: \(self.transportMode.rawValue)")
     }
 
     /// Disconnect MQTT and switch to UDP
@@ -341,12 +472,12 @@ public final class SettingsViewModel: ObservableObject {
 
     /// Check if currently connected
     public var isConnected: Bool {
-        TransportCoordinator.shared.connectionState == .connected
+        connectionState == .connected
     }
 
     /// Current connection state description
     public var connectionStateDescription: String {
-        switch TransportCoordinator.shared.connectionState {
+        switch connectionState {
         case .disconnected:
             return "Disconnected"
         case .connecting:
