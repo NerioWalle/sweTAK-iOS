@@ -315,6 +315,21 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         publish(json: json, to: MQTTTopic.profile)
     }
 
+    /// Publish profile request to discover peers
+    public func publishProfileRequest(deviceId: String, callsign: String?) {
+        let json = """
+        {
+            "type": "profile_req",
+            "deviceId": "\(deviceId)",
+            "callsign": "\(escapeJSON(callsign ?? ""))",
+            "ts": \(Date.currentMillis)
+        }
+        """
+
+        logger.info("Publishing profile request from \(callsign ?? "unknown")")
+        publish(json: json, to: "swetak/v1/profile_req")
+    }
+
     /// Publish chat message
     public func publishChat(_ message: ChatMessage) {
         let json = """
@@ -479,14 +494,19 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 
     private func handlePinMessage(_ json: [String: Any], deviceId: String) {
+        print(">>> MQTT handlePinMessage: Received pin JSON keys: \(json.keys)")
+
         guard let pin = NatoPin.fromJSON(json) else {
+            print(">>> MQTT handlePinMessage: Failed to parse NatoPin from JSON")
             logger.warning("Invalid pin message")
             return
         }
 
+        print(">>> MQTT handlePinMessage: Parsed pin id=\(pin.id) title=\(pin.title) originDeviceId=\(pin.originDeviceId)")
         logger.debug("Pin received: \(pin.title) at \(pin.latitude), \(pin.longitude)")
 
         DispatchQueue.main.async {
+            print(">>> MQTT handlePinMessage: Calling pinListener.onPinReceived")
             TransportCoordinator.shared.pinListener?.onPinReceived(pin: pin)
         }
     }

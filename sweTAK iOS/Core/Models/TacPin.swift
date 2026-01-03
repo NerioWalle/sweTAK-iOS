@@ -130,10 +130,39 @@ public struct NatoPin: Codable, Identifiable, Equatable {
     }
 
     /// Parse from JSON dictionary
+    /// Handles NSNumber conversion from JSONSerialization
     public static func fromJSON(_ json: [String: Any]) -> NatoPin? {
-        guard let id = json["id"] as? Int64 ?? (json["id"] as? Int).map({ Int64($0) }),
-              let lat = json["lat"] as? Double,
-              let lon = json["lon"] as? Double else {
+        // Parse ID - handle NSNumber from JSONSerialization
+        let id: Int64
+        if let idInt64 = json["id"] as? Int64 {
+            id = idInt64
+        } else if let idInt = json["id"] as? Int {
+            id = Int64(idInt)
+        } else if let idNum = json["id"] as? NSNumber {
+            id = idNum.int64Value
+        } else {
+            print(">>> NatoPin.fromJSON: Failed to parse id from: \(String(describing: json["id"]))")
+            return nil
+        }
+
+        // Parse coordinates - handle NSNumber
+        let lat: Double
+        let lon: Double
+        if let latDouble = json["lat"] as? Double {
+            lat = latDouble
+        } else if let latNum = json["lat"] as? NSNumber {
+            lat = latNum.doubleValue
+        } else {
+            print(">>> NatoPin.fromJSON: Failed to parse lat from: \(String(describing: json["lat"]))")
+            return nil
+        }
+
+        if let lonDouble = json["lon"] as? Double {
+            lon = lonDouble
+        } else if let lonNum = json["lon"] as? NSNumber {
+            lon = lonNum.doubleValue
+        } else {
+            print(">>> NatoPin.fromJSON: Failed to parse lon from: \(String(describing: json["lon"]))")
             return nil
         }
 
@@ -143,6 +172,24 @@ public struct NatoPin: Codable, Identifiable, Equatable {
         // Support both "natoType" (MQTT protocol) and "type" (internal) field names
         let typeString = json["natoType"] as? String ?? json["type"] as? String
 
+        // Parse createdAtMillis with NSNumber support
+        let createdAtMillis: Int64
+        if let millis = json["createdAtMillis"] as? Int64 {
+            createdAtMillis = millis
+        } else if let millis = json["createdAtMillis"] as? Int {
+            createdAtMillis = Int64(millis)
+        } else if let millis = json["createdAtMillis"] as? NSNumber {
+            createdAtMillis = millis.int64Value
+        } else if let millis = json["ts"] as? Int64 {
+            createdAtMillis = millis
+        } else if let millis = json["ts"] as? NSNumber {
+            createdAtMillis = millis.int64Value
+        } else {
+            createdAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        }
+
+        print(">>> NatoPin.fromJSON: Parsed pin id=\(id) lat=\(lat) lon=\(lon) type=\(typeString ?? "nil") title=\(title)")
+
         return NatoPin(
             id: id,
             latitude: lat,
@@ -151,9 +198,9 @@ public struct NatoPin: Codable, Identifiable, Equatable {
             title: title,
             description: json["description"] as? String ?? "",
             authorCallsign: json["authorCallsign"] as? String ?? json["callsign"] as? String ?? "",
-            createdAtMillis: json["createdAtMillis"] as? Int64 ?? json["ts"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000),
+            createdAtMillis: createdAtMillis,
             originDeviceId: json["originDeviceId"] as? String ?? json["deviceId"] as? String ?? "",
-            photoUri: json["photoUri"] as? String
+            photoUri: json["photoUri"] as? String ?? json["photoBase64"] as? String
         )
     }
 }

@@ -7,9 +7,9 @@ public enum MessageType: String, Codable {
     case position = "position"
     case pin = "pin"
     case pinDelete = "pin_delete"
-    case pinRequest = "pin_request"
+    case pinRequest = "pin_req"          // Android expects "pin_req" not "pin_request"
     case profile = "profile"
-    case hello = "hello"
+    case hello = "profile_req"           // Android expects "profile_req" for profile requests
     case chat = "chat"
     case chatAck = "chat_ack"
     case order = "order"
@@ -20,7 +20,7 @@ public enum MessageType: String, Codable {
     case methaneAck = "methane_ack"
     case medevac = "medevac"
     case medevacAck = "medevac_ack"
-    case linkedForm = "linked_form"
+    case linkedForm = "linkedform"       // Android expects "linkedform" not "linked_form"
     case photo = "photo"
 }
 

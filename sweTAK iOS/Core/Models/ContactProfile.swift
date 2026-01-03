@@ -115,6 +115,7 @@ public struct ContactProfile: Codable, Identifiable, Equatable {
     }
 
     /// Parse a ContactProfile from incoming JSON (network or MQTT)
+    /// Supports both Android/MQTT field names (firstName, lastName, phone) and UDP field names (first, last, mobile)
     public static func fromJSON(_ json: [String: Any], deviceId: String, fromIp: String? = nil) -> ContactProfile {
         let rawCallsign = json["callsign"] as? String ?? ""
         let callsign = rawCallsign.isEmpty || rawCallsign == "Unknown" ? nil : rawCallsign
@@ -122,16 +123,23 @@ public struct ContactProfile: Codable, Identifiable, Equatable {
         let nick = json["nick"] as? String ?? ""
         let nickname = nick.isEmpty ? (json["nickname"] as? String).flatMap { $0.isEmpty ? nil : $0 } : nick
 
+        // Support both Android/MQTT (firstName) and UDP (first) field names
+        let firstName = (json["firstName"] as? String ?? json["first"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let lastName = (json["lastName"] as? String ?? json["last"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+
+        // Support both Android/MQTT (phone) and UDP (mobile) field names
+        let mobile = (json["phone"] as? String ?? json["mobile"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+
         return ContactProfile(
             deviceId: deviceId,
             nickname: nickname,
             callsign: callsign,
-            firstName: (json["first"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            lastName: (json["last"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            firstName: firstName,
+            lastName: lastName,
             company: (json["company"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             platoon: (json["platoon"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             squad: (json["squad"] as? String ?? json["team"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-            mobile: (json["mobile"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            mobile: mobile,
             email: (json["email"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             photoUri: (json["photoUri"] as? String).flatMap { $0.isEmpty ? nil : $0 },
             role: MilitaryRole.from(json["role"] as? String),

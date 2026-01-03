@@ -468,22 +468,33 @@ public final class TransportCoordinator: ObservableObject {
         sendMessage(message)
     }
 
-    // MARK: - UDP-Specific Methods
+    // MARK: - Peer Discovery Methods
 
-    /// Refresh peer discovery (UDP mode only)
-    /// Sends hello and profile request to discover peers on LAN
+    /// Refresh peer discovery for both UDP and MQTT modes
+    /// Sends profile request to discover peers and publishes own profile
     public func refreshPeerDiscovery(callsign: String) {
-        guard activeMode == .localUDP else { return }
+        switch activeMode {
+        case .localUDP:
+            // Send hello to announce ourselves
+            UDPClientManager.shared.sendHello(callsign: callsign, deviceId: deviceId)
+            // Broadcast profile request to discover all peers
+            UDPClientManager.shared.broadcastProfileRequest(callsign: callsign, deviceId: deviceId)
+            // Also publish our own profile so others know about us
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                UDPClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+            }
 
-        // Send hello to announce ourselves
-        UDPClientManager.shared.sendHello(callsign: callsign, deviceId: deviceId)
-        // Broadcast profile request to discover all peers
-        UDPClientManager.shared.broadcastProfileRequest(callsign: callsign, deviceId: deviceId)
-        // Also publish our own profile so others know about us
-        if let myProfile = ContactsViewModel.shared.myProfile {
-            UDPClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+        case .mqtt:
+            // Publish profile request to MQTT topic
+            MQTTClientManager.shared.publishProfileRequest(deviceId: deviceId, callsign: callsign)
+            // Also publish our own profile so others know about us
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                MQTTClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+            }
         }
     }
+
+    // MARK: - UDP-Specific Methods
 
     /// Set known UDP peers for direct communication
     public func setUDPPeers(_ addresses: Set<String>) {
