@@ -716,7 +716,7 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         }
     }
 
-    /// Send profile request to specific host
+    /// Send profile request
     public func publishProfileRequest(to host: String, callsign: String?, deviceId: String?) {
         var json: [String: Any] = ["type": "profile_req"]
         if let cs = callsign { json["callsign"] = cs }
@@ -724,19 +724,6 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
 
         if let data = try? JSONSerialization.data(withJSONObject: json) {
             sendToHost(data, host: host)
-        }
-    }
-
-    /// Broadcast profile request to all peers on the network
-    public func broadcastProfileRequest(callsign: String?, deviceId: String?) {
-        var json: [String: Any] = ["type": "profile_req"]
-        if let cs = callsign { json["callsign"] = cs }
-        if let devId = deviceId { json["deviceId"] = devId }
-
-        logger.info("Broadcasting profile request from \(callsign ?? "unknown")")
-
-        if let data = try? JSONSerialization.data(withJSONObject: json) {
-            broadcast(data)
         }
     }
 

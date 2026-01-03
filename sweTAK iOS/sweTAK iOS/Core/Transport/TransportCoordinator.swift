@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import os.log
 
 /// Coordinates message routing between UDP and MQTT transports.
 /// This is the main entry point for all network operations.
@@ -9,10 +8,6 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Singleton
 
     public static let shared = TransportCoordinator()
-
-    // MARK: - Logger
-
-    private let logger = Logger(subsystem: "com.swetak", category: "TransportCoordinator")
 
     // MARK: - Published State
 
@@ -65,22 +60,14 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Transport Management
 
     public func setMode(_ mode: TransportMode) {
-        logger.info("setMode() called: requested=\(mode.rawValue) current=\(self.activeMode.rawValue)")
-
-        guard mode != activeMode else {
-            logger.info("setMode() - mode already set, skipping")
-            return
-        }
+        guard mode != activeMode else { return }
 
         // Stop current transport
-        logger.info("Stopping current transport...")
         stopCurrentTransport()
 
         activeMode = mode
-        logger.info("activeMode changed to: \(mode.rawValue)")
 
         // Start new transport
-        logger.info("Starting new transport...")
         startCurrentTransport()
     }
 
@@ -135,25 +122,20 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     private func startMQTT() {
-        logger.info("startMQTT() called - config valid: \(self.mqttConfiguration.isValid), host: \(self.mqttConfiguration.host)")
-
         guard mqttConfiguration.isValid else {
-            logger.error("startMQTT() - invalid MQTT configuration!")
             connectionState = .error("Invalid MQTT configuration")
             return
         }
 
         // Configure and start MQTT transport
-        logger.info("Configuring MQTTClientManager...")
         let mqtt = MQTTClientManager.shared
         mqtt.configure(with: mqttConfiguration)
 
-        // Subscribe to MQTT connection state changes (full state, not just boolean)
-        mqtt.connectionState
+        // Subscribe to MQTT connection state changes
+        mqtt.$isConnected
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                self?.logger.info("MQTT connection state update: \(String(describing: state))")
-                self?.connectionState = state
+            .sink { [weak self] connected in
+                self?.connectionState = connected ? .connected : .disconnected
             }
             .store(in: &cancellables)
 
@@ -468,22 +450,27 @@ public final class TransportCoordinator: ObservableObject {
         sendMessage(message)
     }
 
-    // MARK: - UDP-Specific Methods
+    // MARK: - Peer Discovery Methods
 
-    /// Refresh peer discovery (UDP mode only)
-    /// Sends hello and profile request to discover peers on LAN
+    /// Refresh peer discovery
+    /// Sends hello/profile request to discover peers on network
     public func refreshPeerDiscovery(callsign: String) {
-        guard activeMode == .localUDP else { return }
+        switch activeMode {
+        case .localUDP:
+            UDPClientManager.shared.sendHello(callsign: callsign, deviceId: deviceId)
+            // Profile requests are auto-sent by UDPClientManager when receiving hello/pos
 
-        // Send hello to announce ourselves
-        UDPClientManager.shared.sendHello(callsign: callsign, deviceId: deviceId)
-        // Broadcast profile request to discover all peers
-        UDPClientManager.shared.broadcastProfileRequest(callsign: callsign, deviceId: deviceId)
-        // Also publish our own profile so others know about us
-        if let myProfile = ContactsViewModel.shared.myProfile {
-            UDPClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+        case .mqtt:
+            // For MQTT, publish a profile request and our own profile
+            MQTTClientManager.shared.publishProfileRequest(deviceId: deviceId, callsign: callsign)
+            // Also publish our profile so others can discover us
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                MQTTClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+            }
         }
     }
+
+    // MARK: - UDP-Specific Methods
 
     /// Set known UDP peers for direct communication
     public func setUDPPeers(_ addresses: Set<String>) {
@@ -513,16 +500,12 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Private Send
 
     private func sendMessage(_ message: NetworkMessage, to recipients: [String]? = nil) {
-        logger.info("sendMessage: type=\(message.type.rawValue) activeMode=\(self.activeMode.rawValue) connected=\(self.connectionState.isConnected)")
-
         switch activeMode {
         case .localUDP:
             // Use UDPClientManager which handles broadcast + unicast
-            logger.debug("Sending via UDP")
             UDPClientManager.shared.send(message: message, to: recipients)
         case .mqtt:
             // Use MQTTClientManager which handles topic routing internally
-            logger.info("Sending via MQTT to topic: \(MQTTTopic.topic(for: message.type))")
             MQTTClientManager.shared.send(message: message, to: recipients)
         }
     }
@@ -599,11 +582,19 @@ public final class TransportCoordinator: ObservableObject {
               let lon = payload["lon"] as? Double else { return }
 
         DispatchQueue.main.async { [weak self] in
+            // Notify the position listener (MapViewModel) for map updates
             self?.positionListener?.onPositionReceived(
                 deviceId: deviceId,
                 callsign: callsign,
                 latitude: lat,
                 longitude: lon
+            )
+
+            // Also notify ContactsViewModel for device discovery
+            // This ensures devices are discovered from position messages
+            ContactsViewModel.shared.handlePositionForDiscovery(
+                deviceId: deviceId,
+                callsign: callsign
             )
         }
     }
