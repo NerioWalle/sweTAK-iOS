@@ -130,8 +130,11 @@ public struct PinEditDialog: View {
                 Section("Type") {
                     Picker("Pin Type", selection: $pinType) {
                         ForEach(editableTypes, id: \.self) { type in
-                            Label(type.label, systemImage: type.sfSymbol)
-                                .tag(type)
+                            HStack {
+                                NatoPinIconView(pinType: type, size: 20)
+                                Text(type.label)
+                            }
+                            .tag(type)
                         }
                     }
                     .pickerStyle(.menu)
@@ -195,9 +198,7 @@ public struct PinViewDialog: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Pin type icon and title
                     HStack {
-                        Image(systemName: pin.type.sfSymbol)
-                            .font(.title)
-                            .foregroundColor(.blue)
+                        NatoPinIconView(pinType: pin.type, size: 28, color: iconColor)
 
                         Text(displayTitle)
                             .font(.title2)
@@ -349,6 +350,23 @@ public struct PinViewDialog: View {
             return String(format: "%.6f, %.6f", pin.latitude, pin.longitude)
         }
     }
+
+    private var iconColor: Color {
+        switch pin.type {
+        case .infantry, .marine:
+            return .red
+        case .intelligence, .surveillance, .droneObserved:
+            return .orange
+        case .artillery:
+            return .purple
+        case .op:
+            return .green
+        case .photo:
+            return .blue
+        case .form7S, .formIFS:
+            return .gray
+        }
+    }
 }
 
 // MARK: - Pin Create Dialog
@@ -404,8 +422,11 @@ public struct PinCreateDialog: View {
                 Section("Type") {
                     Picker("Pin Type", selection: $pinType) {
                         ForEach(createableTypes, id: \.self) { type in
-                            Label(type.label, systemImage: type.sfSymbol)
-                                .tag(type)
+                            HStack {
+                                NatoPinIconView(pinType: type, size: 20)
+                                Text(type.label)
+                            }
+                            .tag(type)
                         }
                     }
                     .pickerStyle(.menu)

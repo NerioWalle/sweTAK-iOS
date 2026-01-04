@@ -1606,13 +1606,13 @@ struct MapViewRepresentable: UIViewRepresentable {
                 return view
             }
 
-            // Handle pin annotations
+            // Handle pin annotations - use circular markers like Android
             if let pinAnnotation = annotation as? PinAnnotation {
-                let identifier = "PinMarker"
-                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                let identifier = "PinMarker_\(pinAnnotation.pinType.rawValue)"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
 
                 if view == nil {
-                    view = MKMarkerAnnotationView(annotation: pinAnnotation, reuseIdentifier: identifier)
+                    view = MKAnnotationView(annotation: pinAnnotation, reuseIdentifier: identifier)
                     view?.canShowCallout = true
                     // Add info button for View/Edit/Delete options
                     let infoButton = UIButton(type: .detailDisclosure)
@@ -1621,8 +1621,9 @@ struct MapViewRepresentable: UIViewRepresentable {
                     view?.annotation = pinAnnotation
                 }
 
-                view?.markerTintColor = pinAnnotation.markerColor
-                view?.glyphImage = UIImage(systemName: pinAnnotation.glyphName)
+                // Use circular marker matching Android style
+                view?.image = PinMarkerImageCache.shared.image(for: pinAnnotation.pinType)
+                view?.centerOffset = CGPoint(x: 0, y: 0)  // Center on coordinate
                 return view
             }
 

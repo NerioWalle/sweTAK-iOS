@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - NATO Tactical Icons
 
@@ -265,6 +266,80 @@ private struct TentGroundPath: Shape {
     }
 }
 
+// MARK: - IFS/Artillery Missile Icon
+
+/// Custom missile/artillery icon for IFS form type
+public struct IFSMissileIcon: Shape {
+    public init() {}
+
+    public func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let scale = min(rect.width, rect.height) / 24.0
+        let offsetX = (rect.width - 24 * scale) / 2
+        let offsetY = (rect.height - 24 * scale) / 2
+
+        func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+        func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+        // Missile/artillery shell shape
+        path.move(to: CGPoint(x: x(12), y: y(2)))      // Tip
+        path.addLine(to: CGPoint(x: x(15), y: y(8)))   // Right shoulder
+        path.addLine(to: CGPoint(x: x(15), y: y(18)))  // Right side
+        path.addLine(to: CGPoint(x: x(17), y: y(22)))  // Right fin
+        path.addLine(to: CGPoint(x: x(7), y: y(22)))   // Left fin
+        path.addLine(to: CGPoint(x: x(9), y: y(18)))   // Left side
+        path.addLine(to: CGPoint(x: x(9), y: y(8)))    // Left shoulder
+        path.closeSubpath()
+
+        return path
+    }
+}
+
+// MARK: - Military Tech/Medal Icon
+
+/// Military medal/star icon for Artillery type (matches Android MilitaryTech)
+public struct MilitaryTechIcon: Shape {
+    public init() {}
+
+    public func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let scale = min(rect.width, rect.height) / 24.0
+        let offsetX = (rect.width - 24 * scale) / 2
+        let offsetY = (rect.height - 24 * scale) / 2
+
+        let cx = offsetX + 12 * scale
+        let cy = offsetY + 9 * scale
+
+        // 5-pointed star
+        let outerRadius = 7 * scale
+        let innerRadius = 3 * scale
+
+        for i in 0..<10 {
+            let radius = i % 2 == 0 ? outerRadius : innerRadius
+            let angle = (Double(i) * 36.0 - 90.0) * .pi / 180.0
+            let x = cx + CGFloat(cos(angle)) * radius
+            let y = cy + CGFloat(sin(angle)) * radius
+
+            if i == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        path.closeSubpath()
+
+        // Medal ribbon
+        path.addRect(CGRect(
+            x: offsetX + 9 * scale,
+            y: offsetY + 16 * scale,
+            width: 6 * scale,
+            height: 5 * scale
+        ))
+
+        return path
+    }
+}
+
 // MARK: - Crosshair Icon
 
 /// Simple crosshair icon for map center indicator
@@ -406,6 +481,358 @@ public struct NATOSymbolView: View {
                         .foregroundColor(affiliation.frameColor)
                 }
             }
+        }
+    }
+}
+
+// MARK: - NATO Pin Icon View
+
+/// Unified view for displaying any NATO pin type icon
+/// Matches Android's pin icon rendering
+public struct NatoPinIconView: View {
+    public let pinType: NatoType
+    public var size: CGFloat = 20
+    public var color: Color = .primary
+    public var backgroundColor: Color = .clear
+
+    public init(pinType: NatoType, size: CGFloat = 20, color: Color = .primary, backgroundColor: Color = .clear) {
+        self.pinType = pinType
+        self.size = size
+        self.color = color
+        self.backgroundColor = backgroundColor
+    }
+
+    public var body: some View {
+        Group {
+            switch pinType {
+            case .infantry:
+                Image(systemName: "flag.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .intelligence:
+                Image(systemName: "eye.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .surveillance:
+                Image(systemName: "sensor.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .artillery:
+                MilitaryTechIcon()
+                    .fill(color)
+
+            case .marine:
+                Image(systemName: "anchor.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .droneObserved:
+                DronePinIcon()
+                    .fill(color)
+
+            case .op:
+                ZStack {
+                    TentIcon()
+                }
+
+            case .photo:
+                Image(systemName: "camera.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .form7S:
+                Image(systemName: "doc.fill")
+                    .resizable()
+                    .scaledToFit()
+
+            case .formIFS:
+                IFSMissileIcon()
+                    .fill(color)
+            }
+        }
+        .frame(width: size, height: size)
+        .foregroundColor(color)
+    }
+}
+
+// MARK: - NATO Pin Marker View
+
+/// Complete pin marker view matching Android's circular pin rendering
+public struct NatoPinMarkerView: View {
+    public let pinType: NatoType
+    public var markerSize: CGFloat = 36
+    public var iconSize: CGFloat = 24
+
+    public init(pinType: NatoType, markerSize: CGFloat = 36, iconSize: CGFloat = 24) {
+        self.pinType = pinType
+        self.markerSize = markerSize
+        self.iconSize = iconSize
+    }
+
+    public var body: some View {
+        ZStack {
+            // Circular background with transparency
+            Circle()
+                .fill(Color(.systemBackground).opacity(0.85))
+                .frame(width: markerSize, height: markerSize)
+
+            // Shadow for depth
+            Circle()
+                .stroke(Color.black.opacity(0.2), lineWidth: 1)
+                .frame(width: markerSize, height: markerSize)
+
+            // Icon
+            if pinType == .form7S || pinType == .formIFS {
+                // Form pins: smaller icon with text label
+                VStack(spacing: 0) {
+                    NatoPinIconView(
+                        pinType: pinType,
+                        size: 14,
+                        color: markerColor,
+                        backgroundColor: Color(.systemBackground).opacity(0.85)
+                    )
+                    Text(pinType == .form7S ? "7S" : "IFS")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(markerColor)
+                }
+            } else {
+                // Standard pins: icon only
+                NatoPinIconView(
+                    pinType: pinType,
+                    size: iconSize,
+                    color: markerColor,
+                    backgroundColor: Color(.systemBackground).opacity(0.85)
+                )
+            }
+        }
+    }
+
+    private var markerColor: Color {
+        switch pinType {
+        case .infantry, .marine:
+            return .red
+        case .intelligence, .surveillance, .droneObserved:
+            return .orange
+        case .artillery:
+            return .purple
+        case .op:
+            return .green
+        case .photo:
+            return .blue
+        case .form7S, .formIFS:
+            return .gray
+        }
+    }
+}
+
+// MARK: - UIImage Generation for Map Annotations
+
+extension NatoPinMarkerView {
+    /// Convert the SwiftUI view to a UIImage for use in MKAnnotationView
+    @MainActor
+    func asUIImage() -> UIImage {
+        // Use ImageRenderer for iOS 16+
+        let renderer = ImageRenderer(content: self.frame(width: markerSize, height: markerSize))
+        renderer.scale = UIScreen.main.scale
+
+        if let uiImage = renderer.uiImage {
+            return uiImage
+        }
+
+        // Fallback: create a simple colored circle with SF Symbol
+        let size = CGSize(width: markerSize, height: markerSize)
+        let renderer2 = UIGraphicsImageRenderer(size: size)
+        return renderer2.image { context in
+            // Draw circle background
+            UIColor.systemBackground.withAlphaComponent(0.85).setFill()
+            context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+
+            // Draw border
+            UIColor.black.withAlphaComponent(0.2).setStroke()
+            context.cgContext.setLineWidth(1)
+            context.cgContext.strokeEllipse(in: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+}
+
+/// Cache for pre-rendered pin marker images
+public class PinMarkerImageCache {
+    public static let shared = PinMarkerImageCache()
+
+    private var cache: [NatoType: UIImage] = [:]
+    private let markerSize: CGFloat = 36
+
+    private init() {}
+
+    @MainActor
+    public func image(for pinType: NatoType) -> UIImage {
+        if let cached = cache[pinType] {
+            return cached
+        }
+
+        let image = createMarkerImage(for: pinType)
+        cache[pinType] = image
+        return image
+    }
+
+    public func clearCache() {
+        cache.removeAll()
+    }
+
+    /// Create marker image using Core Graphics for reliability
+    private func createMarkerImage(for pinType: NatoType) -> UIImage {
+        let size = CGSize(width: markerSize, height: markerSize)
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { context in
+            let rect = CGRect(origin: .zero, size: size)
+            let ctx = context.cgContext
+
+            // Draw circular background
+            UIColor.systemBackground.withAlphaComponent(0.9).setFill()
+            ctx.fillEllipse(in: rect.insetBy(dx: 1, dy: 1))
+
+            // Draw border
+            markerColor(for: pinType).withAlphaComponent(0.5).setStroke()
+            ctx.setLineWidth(2)
+            ctx.strokeEllipse(in: rect.insetBy(dx: 2, dy: 2))
+
+            // Draw icon
+            let iconRect = rect.insetBy(dx: 8, dy: 8)
+            let iconColor = markerColor(for: pinType)
+
+            if let sfSymbol = sfSymbolName(for: pinType) {
+                // Use SF Symbol
+                let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+                if let symbolImage = UIImage(systemName: sfSymbol, withConfiguration: config)?.withTintColor(iconColor, renderingMode: .alwaysOriginal) {
+                    let symbolSize = symbolImage.size
+                    let x = (size.width - symbolSize.width) / 2
+                    let y = (size.height - symbolSize.height) / 2
+                    symbolImage.draw(at: CGPoint(x: x, y: y))
+                }
+            } else {
+                // Draw custom shape
+                drawCustomIcon(for: pinType, in: iconRect, color: iconColor, context: ctx)
+            }
+        }
+    }
+
+    private func sfSymbolName(for pinType: NatoType) -> String? {
+        switch pinType {
+        case .infantry: return "flag.fill"
+        case .intelligence: return "eye.fill"
+        case .surveillance: return "sensor.fill"
+        case .marine: return "anchor.fill"
+        case .photo: return "camera.fill"
+        case .form7S: return "doc.fill"
+        case .artillery, .droneObserved, .op, .formIFS:
+            return nil // Custom icons
+        }
+    }
+
+    private func drawCustomIcon(for pinType: NatoType, in rect: CGRect, color: UIColor, context: CGContext) {
+        color.setFill()
+        color.setStroke()
+
+        let scale = min(rect.width, rect.height) / 24.0
+        let offsetX = rect.minX + (rect.width - 24 * scale) / 2
+        let offsetY = rect.minY + (rect.height - 24 * scale) / 2
+
+        func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+        func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+        switch pinType {
+        case .droneObserved:
+            // Quadcopter drone
+            let path = UIBezierPath()
+            // Center body
+            path.append(UIBezierPath(rect: CGRect(x: x(10), y: y(10), width: 4 * scale, height: 4 * scale)))
+            // Arms
+            path.append(UIBezierPath(rect: CGRect(x: x(6), y: y(11), width: 4 * scale, height: 2 * scale)))
+            path.append(UIBezierPath(rect: CGRect(x: x(14), y: y(11), width: 4 * scale, height: 2 * scale)))
+            path.append(UIBezierPath(rect: CGRect(x: x(11), y: y(6), width: 2 * scale, height: 4 * scale)))
+            path.append(UIBezierPath(rect: CGRect(x: x(11), y: y(14), width: 2 * scale, height: 4 * scale)))
+            // Rotors
+            path.append(UIBezierPath(ovalIn: CGRect(x: x(4), y: y(4), width: 4 * scale, height: 4 * scale)))
+            path.append(UIBezierPath(ovalIn: CGRect(x: x(16), y: y(4), width: 4 * scale, height: 4 * scale)))
+            path.append(UIBezierPath(ovalIn: CGRect(x: x(4), y: y(16), width: 4 * scale, height: 4 * scale)))
+            path.append(UIBezierPath(ovalIn: CGRect(x: x(16), y: y(16), width: 4 * scale, height: 4 * scale)))
+            path.fill()
+
+        case .op:
+            // Tent
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: x(12), y: y(4)))
+            path.addLine(to: CGPoint(x: x(21), y: y(18)))
+            path.addLine(to: CGPoint(x: x(3), y: y(18)))
+            path.close()
+            path.fill()
+            // Ground
+            UIBezierPath(rect: CGRect(x: x(2), y: y(18), width: 20 * scale, height: 2 * scale)).fill()
+            // Door cutout
+            UIColor.systemBackground.setFill()
+            let door = UIBezierPath()
+            door.move(to: CGPoint(x: x(12), y: y(10)))
+            door.addLine(to: CGPoint(x: x(15), y: y(18)))
+            door.addLine(to: CGPoint(x: x(9), y: y(18)))
+            door.close()
+            door.fill()
+
+        case .artillery:
+            // Star/medal
+            let cx = x(12)
+            let cy = y(10)
+            let outerR = 6 * scale
+            let innerR = 2.5 * scale
+            let star = UIBezierPath()
+            for i in 0..<10 {
+                let r = i % 2 == 0 ? outerR : innerR
+                let angle = (CGFloat(i) * 36.0 - 90.0) * .pi / 180.0
+                let px = cx + cos(angle) * r
+                let py = cy + sin(angle) * r
+                if i == 0 { star.move(to: CGPoint(x: px, y: py)) }
+                else { star.addLine(to: CGPoint(x: px, y: py)) }
+            }
+            star.close()
+            star.fill()
+            // Ribbon
+            UIBezierPath(rect: CGRect(x: x(9), y: y(16), width: 6 * scale, height: 4 * scale)).fill()
+
+        case .formIFS:
+            // Missile
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: x(12), y: y(3)))
+            path.addLine(to: CGPoint(x: x(15), y: y(8)))
+            path.addLine(to: CGPoint(x: x(15), y: y(17)))
+            path.addLine(to: CGPoint(x: x(17), y: y(21)))
+            path.addLine(to: CGPoint(x: x(7), y: y(21)))
+            path.addLine(to: CGPoint(x: x(9), y: y(17)))
+            path.addLine(to: CGPoint(x: x(9), y: y(8)))
+            path.close()
+            path.fill()
+
+        default:
+            break
+        }
+    }
+
+    private func markerColor(for pinType: NatoType) -> UIColor {
+        switch pinType {
+        case .infantry, .marine:
+            return .systemRed
+        case .intelligence, .surveillance, .droneObserved:
+            return .systemOrange
+        case .artillery:
+            return .systemPurple
+        case .op:
+            return .systemGreen
+        case .photo:
+            return .systemBlue
+        case .form7S, .formIFS:
+            return .systemGray
         }
     }
 }
