@@ -238,12 +238,9 @@ public final class PinsViewModel: ObservableObject {
     // MARK: - Network Pin Handling
 
     private func handleIncomingPin(_ pin: NatoPin, fromDeviceId: String) {
-        // Ignore our own pins
-        guard fromDeviceId != myDeviceId else { return }
-
-        // Only accept pins if we explicitly requested sync
-        guard awaitingPinSync else {
-            logger.debug("Ignoring pin \(pin.id) from \(fromDeviceId) - not awaiting sync")
+        // Ignore our own pins (but allow if originDeviceId is empty - legacy pins)
+        if !fromDeviceId.isEmpty && fromDeviceId == myDeviceId {
+            logger.debug("Ignoring our own pin \(pin.id)")
             return
         }
 
@@ -253,13 +250,14 @@ public final class PinsViewModel: ObservableObject {
             return
         }
 
+        // Always accept pins from the network (like Android does)
         // Update or add pin
         if let index = pins.firstIndex(where: { $0.id == pin.id && $0.originDeviceId == pin.originDeviceId }) {
             pins[index] = pin
             logger.debug("Updated pin \(pin.id) from \(fromDeviceId)")
         } else {
             pins.append(pin)
-            logger.debug("Added pin \(pin.id) from \(fromDeviceId)")
+            logger.info("Added new pin \(pin.id) from \(fromDeviceId) - type: \(pin.type.rawValue)")
         }
         savePins()
     }

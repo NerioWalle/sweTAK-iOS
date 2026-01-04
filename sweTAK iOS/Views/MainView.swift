@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import Photos
 
 /// Main view of the app containing the map and overlay controls
 /// Redesigned to match Android MapScreen layout with overlay-based navigation
@@ -59,6 +60,10 @@ public struct MainView: View {
     @State private var showingSevenSForm = false
     @State private var showingIFSForm = false
     @State private var showingPhotoPicker = false
+
+    // Share sheet for saving photos
+    @State private var shareSheetImage: UIImage? = nil
+    @State private var showingShareSheet = false
 
     public init() {}
 
@@ -209,6 +214,12 @@ public struct MainView: View {
                     pin: pin,
                     isPresented: $showingPinDetails,
                     coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
+                    onSaveToPhotos: { base64String in
+                        savePhotoToLibrary(base64String: base64String)
+                    },
+                    onSaveToFiles: { base64String in
+                        savePhotoToFiles(base64String: base64String)
+                    },
                     onEdit: {
                         showingPinDetails = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -302,6 +313,12 @@ public struct MainView: View {
                 saveGeotaggedPhoto(image: image, location: location, subject: subject, description: description)
             }
         }
+        // Share sheet for saving photos to Files
+        .sheet(isPresented: $showingShareSheet) {
+            if let image = shareSheetImage {
+                ShareSheet(items: [image])
+            }
+        }
     }
 
     // MARK: - Form Description Formatters
@@ -346,7 +363,7 @@ public struct MainView: View {
         let title = subject.isEmpty ? "Photo" : subject
         let desc = description.isEmpty ? "Photo taken at \(formatCoordinate(coord))" : description
 
-        // Convert image to base64 (compressed JPEG for smaller size)
+        // Convert image to base64 (compressed JPEG)
         let photoBase64: String?
         if let imageData = image.jpegData(compressionQuality: 0.7) {
             photoBase64 = imageData.base64EncodedString()
@@ -366,6 +383,26 @@ public struct MainView: View {
             photoUri: photoBase64
         )
         pinsVM.addPin(pin)
+    }
+
+    private func savePhotoToLibrary(base64String: String) {
+        guard let imageData = Data(base64Encoded: base64String),
+              let image = UIImage(data: imageData) else { return }
+
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else { return }
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+        }
+    }
+
+    private func savePhotoToFiles(base64String: String) {
+        guard let imageData = Data(base64Encoded: base64String),
+              let image = UIImage(data: imageData) else { return }
+
+        shareSheetImage = image
+        showingShareSheet = true
     }
 
     // MARK: - Map View
@@ -1719,6 +1756,18 @@ class SavedRoutePolyline: MKPolyline {}
 
 /// Polyline for crosshair-to-position line
 class CrosshairLinePolyline: MKPolyline {}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
 
 // MARK: - Preview
 
