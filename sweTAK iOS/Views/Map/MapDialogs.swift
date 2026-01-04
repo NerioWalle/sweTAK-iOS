@@ -231,19 +231,29 @@ public struct PinViewDialog: View {
                     if let photoUri = pin.photoUri, !photoUri.isEmpty {
                         Divider()
 
-                        // Photo placeholder - in real app would load actual image
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(.systemGray5))
-                                .frame(height: 200)
+                        // Decode base64 image and display
+                        if let imageData = Data(base64Encoded: photoUri),
+                           let uiImage = UIImage(data: imageData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 300)
+                                .cornerRadius(8)
+                        } else {
+                            // Fallback placeholder if decoding fails
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray5))
+                                    .frame(height: 200)
 
-                            VStack {
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                                    .foregroundColor(.secondary)
-                                Text("Photo attached")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                VStack {
+                                    Image(systemName: "photo")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                    Text("Photo attached")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
 

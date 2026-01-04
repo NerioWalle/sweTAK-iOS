@@ -341,12 +341,18 @@ public struct MainView: View {
     }
 
     private func saveGeotaggedPhoto(image: UIImage, location: CLLocationCoordinate2D?, subject: String, description: String) {
-        // Save photo to Photos library with location metadata
-        // For now, just add a pin at the location
         guard let coord = location ?? Optional(longPressCoordinate) else { return }
 
         let title = subject.isEmpty ? "Photo" : subject
         let desc = description.isEmpty ? "Photo taken at \(formatCoordinate(coord))" : description
+
+        // Convert image to base64 (compressed JPEG for smaller size)
+        let photoBase64: String?
+        if let imageData = image.jpegData(compressionQuality: 0.7) {
+            photoBase64 = imageData.base64EncodedString()
+        } else {
+            photoBase64 = nil
+        }
 
         let pin = NatoPin(
             id: pinsVM.generatePinId(),
@@ -356,7 +362,8 @@ public struct MainView: View {
             title: title,
             description: desc,
             authorCallsign: settingsVM.callsign,
-            originDeviceId: TransportCoordinator.shared.deviceId
+            originDeviceId: TransportCoordinator.shared.deviceId,
+            photoUri: photoBase64
         )
         pinsVM.addPin(pin)
     }

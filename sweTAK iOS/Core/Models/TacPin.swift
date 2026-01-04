@@ -111,12 +111,13 @@ public struct NatoPin: Codable, Identifiable, Equatable {
     }
 
     /// Convert to JSON dictionary for network transmission
+    /// Uses field names compatible with Android protocol
     public func toJSON() -> [String: Any] {
         var json: [String: Any] = [
             "id": id,
             "lat": latitude,
             "lon": longitude,
-            "type": type.rawValue,
+            "natoType": type.rawValue,  // Android expects "natoType"
             "title": title,
             "description": description,
             "authorCallsign": authorCallsign,
@@ -124,7 +125,7 @@ public struct NatoPin: Codable, Identifiable, Equatable {
             "originDeviceId": originDeviceId
         ]
         if let photoUri = photoUri {
-            json["photoUri"] = photoUri
+            json["photoBase64"] = photoUri  // Android expects "photoBase64"
         }
         return json
     }
