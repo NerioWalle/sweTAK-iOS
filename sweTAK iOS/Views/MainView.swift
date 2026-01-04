@@ -23,6 +23,15 @@ public struct MainView: View {
     @State private var showingAddPin = false
     @State private var showingAbout = false
 
+    // Orders/Reports/Requests sheet state
+    @State private var showingCreateOBOOrder = false
+    @State private var showingCreateFivePOrder = false
+    @State private var showingCreatePedars = false
+    @State private var showingCreateMist = false
+    @State private var showingListReports = false
+    @State private var showingCreateMethane = false
+    @State private var showingListRequests = false
+
     // Menu presentation state
     @State private var showingLayerMenu = false
     @State private var showingLightingMenu = false
@@ -265,6 +274,42 @@ public struct MainView: View {
         }
         .sheet(isPresented: $showingAbout) {
             AboutScreen()
+        }
+        // Orders creation sheets
+        .sheet(isPresented: $showingCreateOBOOrder) {
+            NavigationStack {
+                CreateOBOOrderScreen()
+            }
+        }
+        .sheet(isPresented: $showingCreateFivePOrder) {
+            NavigationStack {
+                CreateFivePOrderScreen()
+            }
+        }
+        // Reports creation sheets
+        .sheet(isPresented: $showingCreatePedars) {
+            NavigationStack {
+                CreateReportScreen()
+            }
+        }
+        .sheet(isPresented: $showingCreateMist) {
+            NavigationStack {
+                CreateMedevacScreen()
+            }
+        }
+        .sheet(isPresented: $showingListReports) {
+            CombinedReportsListView()
+        }
+        // Requests sheets
+        .sheet(isPresented: $showingCreateMethane) {
+            NavigationStack {
+                CreateMethaneScreen()
+            }
+        }
+        .sheet(isPresented: $showingListRequests) {
+            NavigationStack {
+                MethaneListScreen()
+            }
         }
         .sheet(isPresented: $showingRoutes) {
             RoutesListSheet()
@@ -660,15 +705,14 @@ public struct MainView: View {
     private var messagingMenuButton: some View {
         MessagingMenuButton(
             onOpenChat: { showingChat = true },
-            onCreateOBOOrder: { /* TODO: Create OBO order */ },
-            onCreateFivePOrder: { /* TODO: Create 5P order */ },
+            onCreateOBOOrder: { showingCreateOBOOrder = true },
+            onCreateFivePOrder: { showingCreateFivePOrder = true },
             onListOrders: { showingOrders = true },
-            onCreatePedars: { /* TODO: Create PEDARS */ },
-            onListPedars: { /* TODO: List PEDARS */ },
-            onCreateMist: { /* TODO: Create MIST */ },
-            onListMist: { /* TODO: List MIST */ },
-            onCreateMethane: { /* TODO: Create METHANE */ },
-            onListMethane: { /* TODO: List METHANE */ }
+            onCreatePedars: { showingCreatePedars = true },
+            onCreateMist: { showingCreateMist = true },
+            onListReports: { showingListReports = true },
+            onCreateMethane: { showingCreateMethane = true },
+            onListRequests: { showingListRequests = true }
         )
     }
 
@@ -1855,6 +1899,47 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Combined Reports List View
+
+/// Combined view showing both PEDARS and MIST reports with tab selection
+struct CombinedReportsListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var reportsVM = ReportsViewModel.shared
+    @ObservedObject private var medevacVM = MedevacViewModel.shared
+
+    @State private var selectedTab = 0
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Segmented control for report types
+                Picker("Report Type", selection: $selectedTab) {
+                    Text("PEDARS (\(reportsVM.reports.count))").tag(0)
+                    Text("MIST (\(medevacVM.reports.count))").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+
+                // Content based on selected tab
+                if selectedTab == 0 {
+                    ReportsListScreen()
+                } else {
+                    MedevacListScreen()
+                }
+            }
+            .navigationTitle("Reports")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Preview
