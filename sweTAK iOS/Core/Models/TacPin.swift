@@ -141,7 +141,6 @@ public struct NatoPin: Codable, Identifiable, Equatable {
         } else if let idNum = json["id"] as? NSNumber {
             id = idNum.int64Value
         } else {
-            print(">>> NatoPin.fromJSON: Failed to parse id from: \(String(describing: json["id"]))")
             return nil
         }
 
@@ -153,7 +152,6 @@ public struct NatoPin: Codable, Identifiable, Equatable {
         } else if let latNum = json["lat"] as? NSNumber {
             lat = latNum.doubleValue
         } else {
-            print(">>> NatoPin.fromJSON: Failed to parse lat from: \(String(describing: json["lat"]))")
             return nil
         }
 
@@ -162,7 +160,6 @@ public struct NatoPin: Codable, Identifiable, Equatable {
         } else if let lonNum = json["lon"] as? NSNumber {
             lon = lonNum.doubleValue
         } else {
-            print(">>> NatoPin.fromJSON: Failed to parse lon from: \(String(describing: json["lon"]))")
             return nil
         }
 
@@ -187,8 +184,6 @@ public struct NatoPin: Codable, Identifiable, Equatable {
         } else {
             createdAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         }
-
-        print(">>> NatoPin.fromJSON: Parsed pin id=\(id) lat=\(lat) lon=\(lon) type=\(typeString ?? "nil") title=\(title)")
 
         return NatoPin(
             id: id,

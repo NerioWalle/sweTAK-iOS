@@ -113,9 +113,6 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             flatJson["createdAtMillis"] = createdAt
         }
 
-        // Log the final JSON for debugging
-        print(">>> MQTT send() JSON: \(flatJson)")
-
         do {
             let data = try JSONSerialization.data(withJSONObject: flatJson, options: [])
             guard let jsonString = String(data: data, encoding: .utf8) else {
@@ -142,7 +139,6 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     /// Connect to the MQTT broker
     public func connect(with config: MQTTConfiguration) {
         logger.info("connect() called: host=\(config.host) port=\(config.port) tls=\(config.useTLS)")
-        print(">>> MQTT connect(): host=\(config.host) port=\(config.port) tls=\(config.useTLS)")
 
         configuration = config
 
@@ -156,7 +152,6 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
         // Create MQTT 3.1.1 client (most universally supported)
         let clientId = config.clientId.isEmpty ? "swetak-ios-\(UUID().uuidString.prefix(8))" : config.clientId
-        print(">>> MQTT: Creating MQTT 3.1.1 client with ID: \(clientId)")
 
         let mqttClient = CocoaMQTT(clientID: clientId, host: config.host, port: UInt16(config.port))
 
@@ -168,15 +163,11 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         mqttClient.autoReconnectTimeInterval = 5
         mqttClient.cleanSession = true
 
-        print(">>> MQTT: Username=\(config.username ?? "nil") Password=\(config.password != nil ? "(set)" : "nil")")
-
         // TLS configuration
         mqttClient.enableSSL = config.useTLS
         if config.useTLS {
             // Allow untrusted certificates for servers with self-signed certs
             mqttClient.allowUntrustCACertificate = true
-
-            print(">>> MQTT: TLS enabled with allowUntrustCACertificate=true")
             logger.info("TLS enabled with allowUntrustCACertificate=true")
         }
 
@@ -186,14 +177,11 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         self.mqtt = mqttClient
 
         // Attempt connection
-        print(">>> MQTT: Initiating MQTT 3.1.1 connection to \(config.host):\(config.port) TLS=\(config.useTLS)")
         logger.info("Initiating connection to \(config.host):\(config.port)...")
         let result = mqttClient.connect()
         if result {
-            print(">>> MQTT: Connection initiated, waiting for CONNACK...")
             logger.info("Connection initiated successfully, waiting for CONNACK...")
         } else {
-            print(">>> MQTT: Failed to initiate connection!")
             logger.error("connect() failed to initiate connection")
             _connectionState = .error("Failed to initiate MQTT connection")
         }
@@ -494,19 +482,14 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 
     private func handlePinMessage(_ json: [String: Any], deviceId: String) {
-        print(">>> MQTT handlePinMessage: Received pin JSON keys: \(json.keys)")
-
         guard let pin = NatoPin.fromJSON(json) else {
-            print(">>> MQTT handlePinMessage: Failed to parse NatoPin from JSON")
             logger.warning("Invalid pin message")
             return
         }
 
-        print(">>> MQTT handlePinMessage: Parsed pin id=\(pin.id) title=\(pin.title) originDeviceId=\(pin.originDeviceId)")
         logger.debug("Pin received: \(pin.title) at \(pin.latitude), \(pin.longitude)")
 
         DispatchQueue.main.async {
-            print(">>> MQTT handlePinMessage: Calling pinListener.onPinReceived")
             TransportCoordinator.shared.pinListener?.onPinReceived(pin: pin)
         }
     }
@@ -995,11 +978,9 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 extension MQTTClientManager: CocoaMQTTDelegate {
 
     public func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
-        print(">>> MQTT: didConnectAck - ack=\(ack)")
         logger.info("Connected with ack: \(String(describing: ack), privacy: .public)")
 
         if ack == .accept {
-            print(">>> MQTT: Connection successful!")
             _connectionState = .connected
             subscribeToAllTopics()
         } else {
@@ -1018,7 +999,6 @@ extension MQTTClientManager: CocoaMQTTDelegate {
             default:
                 errorMsg = "Connection rejected: \(ack)"
             }
-            print(">>> MQTT: Connection rejected: \(errorMsg)")
             _connectionState = .error(errorMsg)
         }
     }
@@ -1040,10 +1020,8 @@ extension MQTTClientManager: CocoaMQTTDelegate {
 
     public func mqtt(_ mqtt: CocoaMQTT, didSubscribeTopics success: NSDictionary, failed: [String]) {
         logger.info("Subscribed to topics: \(success.allKeys)")
-        print(">>> MQTT: Subscribed to topics: \(success.allKeys)")
         if !failed.isEmpty {
             logger.warning("Failed to subscribe to: \(failed)")
-            print(">>> MQTT: Failed to subscribe to: \(failed)")
         }
     }
 
@@ -1062,39 +1040,20 @@ extension MQTTClientManager: CocoaMQTTDelegate {
     public func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
         if let error = err {
             let errorMsg = error.localizedDescription
-            // Use print for non-redacted output
-            print(">>> MQTT Disconnected with error: \(errorMsg)")
-            print(">>> Error details: \(error)")
-            print(">>> Error type: \(type(of: error))")
-            if let nsError = error as NSError? {
-                print(">>> NSError domain: \(nsError.domain), code: \(nsError.code)")
-                print(">>> NSError userInfo: \(nsError.userInfo)")
-            }
             logger.error("Disconnected with error: \(errorMsg, privacy: .public)")
             _connectionState = .error(errorMsg)
         } else {
-            print(">>> MQTT: Disconnected normally (no error)")
             logger.info("Disconnected normally")
             _connectionState = .disconnected
         }
     }
 
     public func mqtt(_ mqtt: CocoaMQTT, didStateChangeTo state: CocoaMQTTConnState) {
-        print(">>> MQTT: State changed to: \(state)")
         logger.info("MQTT state changed to: \(String(describing: state))")
     }
 
     public func mqtt(_ mqtt: CocoaMQTT, didReceive trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
-        print(">>> MQTT: Received SSL trust challenge")
-
-        // Get certificate info for debugging
-        if let serverCert = SecTrustGetCertificateAtIndex(trust, 0) {
-            let summary = SecCertificateCopySubjectSummary(serverCert) as String? ?? "unknown"
-            print(">>> MQTT: Server certificate: \(summary)")
-        }
-
         // Accept all certificates for this server
-        print(">>> MQTT: Accepting certificate")
         completionHandler(true)
     }
 }

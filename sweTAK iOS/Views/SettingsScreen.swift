@@ -272,12 +272,9 @@ public struct SettingsScreen: View {
 
             // Connect/Disconnect button
             Button(action: {
-                print(">>> CONNECT BUTTON PRESSED - isConnected: \(settingsVM.isConnected), isValid: \(settingsVM.mqttSettings.isValid)")
                 if settingsVM.isConnected {
-                    print(">>> Calling disconnectMQTT()")
                     settingsVM.disconnectMQTT()
                 } else {
-                    print(">>> Calling connectMQTT() with host: \(settingsVM.mqttSettings.host)")
                     settingsVM.connectMQTT()
                 }
             }) {

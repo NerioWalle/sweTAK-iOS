@@ -196,7 +196,6 @@ public final class PinsViewModel: ObservableObject {
     /// Call this when requesting pins from the network
     /// Opens a window to accept incoming pins for a limited time
     public func startAwaitingPinSync(timeoutSeconds: Double = 30) {
-        print(">>> startAwaitingPinSync: Opening sync window for \(timeoutSeconds)s")
         logger.info("Starting pin sync window (timeout: \(timeoutSeconds)s)")
         awaitingPinSync = true
 
@@ -239,24 +238,17 @@ public final class PinsViewModel: ObservableObject {
     // MARK: - Network Pin Handling
 
     private func handleIncomingPin(_ pin: NatoPin, fromDeviceId: String) {
-        print(">>> handleIncomingPin: pin.id=\(pin.id) fromDeviceId=\(fromDeviceId) myDeviceId=\(myDeviceId) awaitingPinSync=\(awaitingPinSync)")
-
         // Ignore our own pins
-        guard fromDeviceId != myDeviceId else {
-            print(">>> handleIncomingPin: Ignoring own pin")
-            return
-        }
+        guard fromDeviceId != myDeviceId else { return }
 
         // Only accept pins if we explicitly requested sync
         guard awaitingPinSync else {
-            print(">>> handleIncomingPin: Ignoring pin - not awaiting sync")
             logger.debug("Ignoring pin \(pin.id) from \(fromDeviceId) - not awaiting sync")
             return
         }
 
         // Check if sender is blocked
         guard !blockedDeviceIds.contains(fromDeviceId) else {
-            print(">>> handleIncomingPin: Rejected from blocked device")
             logger.debug("Rejected pin from blocked device: \(fromDeviceId)")
             return
         }
@@ -264,11 +256,9 @@ public final class PinsViewModel: ObservableObject {
         // Update or add pin
         if let index = pins.firstIndex(where: { $0.id == pin.id && $0.originDeviceId == pin.originDeviceId }) {
             pins[index] = pin
-            print(">>> handleIncomingPin: Updated existing pin \(pin.id)")
             logger.debug("Updated pin \(pin.id) from \(fromDeviceId)")
         } else {
             pins.append(pin)
-            print(">>> handleIncomingPin: Added new pin \(pin.id), total pins: \(pins.count)")
             logger.debug("Added pin \(pin.id) from \(fromDeviceId)")
         }
         savePins()
@@ -279,7 +269,6 @@ public final class PinsViewModel: ObservableObject {
 
 extension PinsViewModel: PinListener {
     public func onPinReceived(pin: NatoPin) {
-        print(">>> PinsViewModel.onPinReceived: pin.id=\(pin.id) pin.originDeviceId=\(pin.originDeviceId)")
         DispatchQueue.main.async { [weak self] in
             self?.handleIncomingPin(pin, fromDeviceId: pin.originDeviceId)
         }
