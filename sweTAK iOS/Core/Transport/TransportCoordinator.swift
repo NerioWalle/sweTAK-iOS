@@ -209,7 +209,11 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Request all pins from network
+    /// Opens a sync window to accept incoming pins for 30 seconds
     public func requestAllPins(callsign: String) {
+        // Open sync window to accept incoming pins
+        PinsViewModel.shared.startAwaitingPinSync(timeoutSeconds: 30)
+
         let payload: [String: Any] = [
             "callsign": callsign
         ]
