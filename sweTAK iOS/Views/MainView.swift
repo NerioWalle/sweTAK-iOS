@@ -67,6 +67,76 @@ public struct MainView: View {
 
     public init() {}
 
+    /// Key for task ID based on crosshair position (for elevation fetching)
+    private var crosshairPositionKey: String {
+        guard let pos = mapVM.crosshairPosition else { return "none" }
+        // Round to 4 decimal places (~11m precision) to avoid excessive API calls
+        return String(format: "%.4f,%.4f", pos.latitude, pos.longitude)
+    }
+
+    /// Fetch elevation for crosshair position using MapTiler or Open-Elevation API
+    private func fetchCrosshairElevation(latitude: Double, longitude: Double) async -> Double? {
+        let apiKey = settingsVM.mapTilerSettings.apiKey
+
+        // Build URLs to try
+        var urls: [String] = []
+
+        // MapTiler API (if key provided)
+        if !apiKey.isEmpty {
+            let cleanKey = apiKey.replacingOccurrences(of: "pk.", with: "").trimmingCharacters(in: .whitespaces)
+            urls.append("https://api.maptiler.com/elevation/point.json?key=\(cleanKey)&lat=\(latitude)&lon=\(longitude)&units=m")
+        }
+
+        // Open-Elevation (public fallback)
+        urls.append("https://api.open-elevation.com/api/v1/lookup?locations=\(latitude),\(longitude)")
+
+        // Try each URL
+        for urlString in urls {
+            guard let url = URL(string: urlString) else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else { continue }
+
+                if let elevation = parseElevation(from: data) {
+                    return elevation
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// Parse elevation from API response
+    private func parseElevation(from data: Data) -> Double? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        // MapTiler plain JSON: { "elevation": 123.4, ... }
+        if let elevation = json["elevation"] as? Double {
+            return elevation
+        }
+
+        // MapTiler GeoJSON: features[0].properties.elevation
+        if let features = json["features"] as? [[String: Any]],
+           let first = features.first,
+           let properties = first["properties"] as? [String: Any],
+           let elevation = properties["elevation"] as? Double {
+            return elevation
+        }
+
+        // Open-Elevation: { "results": [ { "elevation": 123, ... } ] }
+        if let results = json["results"] as? [[String: Any]],
+           let first = results.first,
+           let elevation = first["elevation"] as? Double {
+            return elevation
+        }
+
+        return nil
+    }
+
     public var body: some View {
         ZStack {
             // Full-screen map (background)
@@ -99,7 +169,7 @@ public struct MainView: View {
             GeometryReader { geometry in
                 let isLandscape = geometry.size.width > geometry.size.height
                 let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
+                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
 
                 VStack(spacing: 0) {
                     // Top control panel (Layers, Lighting, Messaging)
@@ -112,7 +182,7 @@ public struct MainView: View {
                     // HUD overlay at bottom-left
                     fullHudOverlay
                         .padding(.horizontal, sidePadding)
-                        .padding(.bottom, max(16, geometry.safeAreaInsets.bottom))
+                        .padding(.bottom, max(32, geometry.safeAreaInsets.bottom))
                 }
             }
 
@@ -122,7 +192,7 @@ public struct MainView: View {
                 HStack {
                     Spacer()
                     mapControlButtons
-                        .padding(.trailing, 16)
+                        .padding(.trailing, 32)
                         .padding(.bottom, 100)
                 }
             }
@@ -131,9 +201,9 @@ public struct MainView: View {
             GeometryReader { geometry in
                 let isLandscape = geometry.size.width > geometry.size.height
                 let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
+                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .center, spacing: 8) {
                     Spacer()
                         .frame(height: geometry.safeAreaInsets.top + topPadding + 68)
 
@@ -155,6 +225,15 @@ public struct MainView: View {
             locationManager.requestPermission()
             locationManager.setBroadcastInterval(settingsVM.gpsIntervalSeconds)
             locationManager.startTracking()
+        }
+        .task(id: crosshairPositionKey) {
+            // Fetch elevation when crosshair position changes
+            guard let pos = mapVM.crosshairPosition else {
+                mapVM.updateCrosshairAltitude(nil)
+                return
+            }
+            let elevation = await fetchCrosshairElevation(latitude: pos.latitude, longitude: pos.longitude)
+            mapVM.updateCrosshairAltitude(elevation)
         }
         .onReceive(locationManager.$currentLocation) { location in
             // Center map on user's position with 20km radius on first location update
@@ -759,16 +838,20 @@ public struct MainView: View {
 
     private var mapControlButtons: some View {
         VStack(spacing: 12) {
-            // Center/Follow button
-            MapControlButton(
-                icon: mapVM.followMe ? "location.fill" : "location",
-                isActive: mapVM.followMe,
-                activeColor: .blue
-            ) {
+            // Center/Follow button - uses MyLocationIcon matching Android
+            Button {
                 // Enable follow mode and reset crosshair
                 crosshairOffset = .zero
                 mapVM.updateCrosshairPosition(nil)
                 mapVM.setFollowMe(true)
+            } label: {
+                MyLocationIcon(
+                    size: 24,
+                    color: mapVM.followMe ? .blue : .primary
+                )
+                .frame(width: 48, height: 48)
+                .background(mapVM.followMe ? Color.blue.opacity(0.2) : Color.clear)
+                .clipShape(Circle())
             }
 
             // Zoom in button
@@ -797,13 +880,15 @@ public struct MainView: View {
                 }
             }
 
-            // Recording button
+            // Recording button - video recorder style matching Android
             if locationManager.isRecordingBreadcrumbs {
                 VStack(spacing: 4) {
-                    MapControlButton(icon: "stop.fill", activeColor: .red) {
+                    Button {
                         if let route = locationManager.stopRecordingBreadcrumbs() {
                             routesVM.addBreadcrumbRoute(route)
                         }
+                    } label: {
+                        RecordButtonIcon(isRecording: true, size: 48)
                     }
 
                     Text(formatRecordingDuration())
@@ -816,8 +901,10 @@ public struct MainView: View {
                         .cornerRadius(4)
                 }
             } else {
-                MapControlButton(icon: "record.circle") {
+                Button {
                     locationManager.startRecordingBreadcrumbs()
+                } label: {
+                    RecordButtonIcon(isRecording: false, size: 48)
                 }
             }
         }

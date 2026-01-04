@@ -373,6 +373,134 @@ public struct CrosshairIcon: Shape {
     }
 }
 
+// MARK: - MyLocation Icon (matches Android Icons.Filled.MyLocation)
+
+/// Crosshair-style location icon matching Android's MyLocation Material icon
+/// Shows a circle with a dot in center and four pointing segments
+public struct MyLocationIcon: View {
+    public var size: CGFloat = 24
+    public var color: Color = .primary
+
+    public init(size: CGFloat = 24, color: Color = .primary) {
+        self.size = size
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, canvasSize in
+            let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+            let scale = min(canvasSize.width, canvasSize.height) / 24.0
+
+            // Outer circle (ring)
+            let outerRadius = 9 * scale
+            let ringWidth = 2 * scale
+            var outerRing = Path()
+            outerRing.addArc(center: center, radius: outerRadius, startAngle: .zero, endAngle: .degrees(360), clockwise: false)
+            context.stroke(outerRing, with: .color(color), lineWidth: ringWidth)
+
+            // Center dot
+            let dotRadius = 3 * scale
+            var centerDot = Path()
+            centerDot.addArc(center: center, radius: dotRadius, startAngle: .zero, endAngle: .degrees(360), clockwise: false)
+            context.fill(centerDot, with: .color(color))
+
+            // Four crosshair arms extending outward from the ring
+            let armLength = 3 * scale
+            let armWidth = 2 * scale
+            let gapFromCenter = outerRadius + ringWidth / 2
+
+            // Top arm
+            var topArm = Path()
+            topArm.addRect(CGRect(
+                x: center.x - armWidth / 2,
+                y: center.y - gapFromCenter - armLength,
+                width: armWidth,
+                height: armLength
+            ))
+            context.fill(topArm, with: .color(color))
+
+            // Bottom arm
+            var bottomArm = Path()
+            bottomArm.addRect(CGRect(
+                x: center.x - armWidth / 2,
+                y: center.y + gapFromCenter,
+                width: armWidth,
+                height: armLength
+            ))
+            context.fill(bottomArm, with: .color(color))
+
+            // Left arm
+            var leftArm = Path()
+            leftArm.addRect(CGRect(
+                x: center.x - gapFromCenter - armLength,
+                y: center.y - armWidth / 2,
+                width: armLength,
+                height: armWidth
+            ))
+            context.fill(leftArm, with: .color(color))
+
+            // Right arm
+            var rightArm = Path()
+            rightArm.addRect(CGRect(
+                x: center.x + gapFromCenter,
+                y: center.y - armWidth / 2,
+                width: armLength,
+                height: armWidth
+            ))
+            context.fill(rightArm, with: .color(color))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Video Recorder Style Record Button (matches Android)
+
+/// Recording button matching Android's video recorder style
+/// White ring around edge, red circle when not recording, red rounded square when recording
+public struct RecordButtonIcon: View {
+    public var isRecording: Bool
+    public var size: CGFloat = 56
+
+    public init(isRecording: Bool = false, size: CGFloat = 56) {
+        self.isRecording = isRecording
+        self.size = size
+    }
+
+    public var body: some View {
+        Canvas { context, canvasSize in
+            let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
+            let outerRadius = min(canvasSize.width, canvasSize.height) / 2
+            let strokeWidth: CGFloat = 4
+
+            // Outer white ring
+            var outerRing = Path()
+            outerRing.addArc(center: center, radius: outerRadius - strokeWidth / 2, startAngle: .zero, endAngle: .degrees(360), clockwise: false)
+            context.stroke(outerRing, with: .color(.white), lineWidth: strokeWidth)
+
+            if isRecording {
+                // Recording: Red rounded square (stop button)
+                let squareSize = outerRadius * 0.9
+                let cornerRadius: CGFloat = 4
+                let squareRect = CGRect(
+                    x: center.x - squareSize / 2,
+                    y: center.y - squareSize / 2,
+                    width: squareSize,
+                    height: squareSize
+                )
+                var squarePath = Path(roundedRect: squareRect, cornerRadius: cornerRadius)
+                context.fill(squarePath, with: .color(.red))
+            } else {
+                // Not recording: Red circle
+                let innerRadius = outerRadius * 0.7
+                var innerCircle = Path()
+                innerCircle.addArc(center: center, radius: innerRadius, startAngle: .zero, endAngle: .degrees(360), clockwise: false)
+                context.fill(innerCircle, with: .color(.red))
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 // MARK: - NATO Symbology Helper
 
 /// Affiliation types for NATO symbols
