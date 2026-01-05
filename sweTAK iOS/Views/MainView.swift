@@ -84,6 +84,10 @@ public struct MainView: View {
     @State private var showingRecordedRoutesDialog = false
     @State private var showingPlannedRoutesDialog = false
 
+    // Broadcast position feedback
+    @State private var showingBroadcastConfirmation = false
+    @State private var broadcastMessage = ""
+
     // Share sheet for saving photos
     @State private var shareSheetImage: UIImage? = nil
     @State private var showingShareSheet = false
@@ -252,6 +256,36 @@ public struct MainView: View {
             // Route planning overlay (when in planning mode)
             RoutePlanningOverlay(planningState: planningState) { route in
                 routesVM.addPlannedRoute(route)
+            }
+
+            // Toast notification overlay
+            if showingBroadcastConfirmation {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Image("NerioLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Text(broadcastMessage)
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(25)
+                    .padding(.bottom, 100)
+                }
+                .transition(.opacity)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation {
+                            showingBroadcastConfirmation = false
+                        }
+                    }
+                }
             }
         }
         .ignoresSafeArea(edges: .all)
@@ -855,12 +889,19 @@ public struct MainView: View {
 
             // Broadcast my position
             Button {
-                if let position = locationManager.currentCoordinate {
+                // Try mapVM.myPosition first (most reliable), then locationManager
+                if let position = mapVM.myPosition ?? locationManager.currentCoordinate {
                     TransportCoordinator.shared.publishPosition(
                         callsign: settingsVM.callsign,
                         latitude: position.latitude,
                         longitude: position.longitude
                     )
+                    broadcastMessage = "Position broadcast sent"
+                } else {
+                    broadcastMessage = "Location not available"
+                }
+                withAnimation {
+                    showingBroadcastConfirmation = true
                 }
             } label: {
                 Label("Broadcast My Position", systemImage: "antenna.radiowaves.left.and.right")
