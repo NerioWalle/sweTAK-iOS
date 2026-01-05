@@ -128,16 +128,18 @@ public struct PinEditDialog: View {
                 }
 
                 Section("Type") {
-                    Picker("Pin Type", selection: $pinType) {
-                        ForEach(editableTypes, id: \.self) { type in
-                            HStack {
-                                NatoPinIconView(pinType: type, size: 20)
-                                Text(type.label)
-                            }
-                            .tag(type)
+                    NavigationLink {
+                        PinTypePicker(selection: $pinType, types: editableTypes)
+                    } label: {
+                        HStack {
+                            Text("Pin Type")
+                            Spacer()
+                            PinTypeIconView(pinType: pinType)
+                                .frame(width: 20, height: 20)
+                            Text(pinType.label)
+                                .foregroundColor(.secondary)
                         }
                     }
-                    .pickerStyle(.menu)
                 }
             }
             .navigationTitle("Edit Pin")
@@ -376,6 +378,7 @@ public struct PinCreateDialog: View {
     @Binding var isPresented: Bool
     let latitude: Double
     let longitude: Double
+    let preselectedType: NatoType?
     let onConfirm: (NatoPin) -> Void
 
     @State private var title = ""
@@ -399,11 +402,13 @@ public struct PinCreateDialog: View {
         isPresented: Binding<Bool>,
         latitude: Double,
         longitude: Double,
+        pinType: NatoType? = nil,
         onConfirm: @escaping (NatoPin) -> Void
     ) {
         self._isPresented = isPresented
         self.latitude = latitude
         self.longitude = longitude
+        self.preselectedType = pinType
         self.onConfirm = onConfirm
     }
 
@@ -419,17 +424,33 @@ public struct PinCreateDialog: View {
                         .focused($focusedField, equals: .description)
                 }
 
-                Section("Type") {
-                    Picker("Pin Type", selection: $pinType) {
-                        ForEach(createableTypes, id: \.self) { type in
+                // Only show type picker if no type was preselected
+                if preselectedType == nil {
+                    Section("Type") {
+                        NavigationLink {
+                            PinTypePicker(selection: $pinType, types: createableTypes)
+                        } label: {
                             HStack {
-                                NatoPinIconView(pinType: type, size: 20)
-                                Text(type.label)
+                                Text("Pin Type")
+                                Spacer()
+                                PinTypeIconView(pinType: pinType)
+                                    .frame(width: 20, height: 20)
+                                Text(pinType.label)
+                                    .foregroundColor(.secondary)
                             }
-                            .tag(type)
                         }
                     }
-                    .pickerStyle(.menu)
+                } else {
+                    Section("Type") {
+                        HStack {
+                            Text("Pin Type")
+                            Spacer()
+                            PinTypeIconView(pinType: pinType)
+                                .frame(width: 20, height: 20)
+                            Text(pinType.label)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section("Location") {
@@ -466,6 +487,10 @@ public struct PinCreateDialog: View {
                 }
             }
             .onAppear {
+                // Set the preselected type if provided
+                if let preselected = preselectedType {
+                    pinType = preselected
+                }
                 focusedField = .title
             }
         }
@@ -519,6 +544,75 @@ public struct PinDeleteConfirmation: View {
             }
         }
         .padding()
+    }
+}
+
+// MARK: - Pin Type Icon View
+
+/// Helper view to render pin type icons with black color
+struct PinTypeIconView: View {
+    let pinType: NatoType
+
+    var body: some View {
+        switch pinType {
+        case .infantry:
+            FlagPinIcon(color: .black)
+        case .intelligence:
+            EyePinIcon(color: .black)
+        case .surveillance:
+            SurveillancePinIcon(color: .black)
+        case .artillery:
+            MilitaryTechIcon()
+                .fill(Color.black)
+        case .marine:
+            AnchorPinIcon(color: .black)
+        case .droneObserved:
+            DronePinIcon()
+                .fill(Color.black)
+        case .op:
+            TentIcon(color: .black)
+        case .photo:
+            CameraPinIcon(color: .black)
+        case .form7S:
+            DocumentPinIcon(color: .black)
+        case .formIFS:
+            IFSMissileIcon()
+                .fill(Color.black)
+        }
+    }
+}
+
+// MARK: - Pin Type Picker
+
+/// Custom picker for selecting pin types with proper icon rendering
+struct PinTypePicker: View {
+    @Binding var selection: NatoType
+    let types: [NatoType]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            ForEach(types, id: \.self) { type in
+                Button {
+                    selection = type
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        PinTypeIconView(pinType: type)
+                            .frame(width: 24, height: 24)
+                        Text(type.label)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        if type == selection {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Select Pin Type")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

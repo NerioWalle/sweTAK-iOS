@@ -271,6 +271,278 @@ private struct TentGroundPath: Shape {
     }
 }
 
+// MARK: - Flag Icon (Infantry)
+
+/// Custom flag icon for Infantry pin type
+public struct FlagPinIcon: View {
+    public var color: Color = .black
+
+    public init(color: Color = .black) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            var path = Path()
+            // Pole
+            path.addRect(CGRect(x: x(5), y: y(4), width: 2 * scale, height: 16 * scale))
+            // Flag
+            path.move(to: CGPoint(x: x(7), y: y(4)))
+            path.addLine(to: CGPoint(x: x(19), y: y(4)))
+            path.addLine(to: CGPoint(x: x(19), y: y(12)))
+            path.addLine(to: CGPoint(x: x(7), y: y(12)))
+            path.closeSubpath()
+
+            context.fill(path, with: .color(color))
+        }
+    }
+}
+
+// MARK: - Eye Icon (Intelligence)
+
+/// Custom eye icon for Intelligence pin type
+public struct EyePinIcon: View {
+    public var color: Color = .primary
+
+    public init(color: Color = .primary) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            // Eye outline (almond shape)
+            var eyePath = Path()
+            eyePath.move(to: CGPoint(x: x(2), y: y(12)))
+            eyePath.addQuadCurve(to: CGPoint(x: x(22), y: y(12)), control: CGPoint(x: x(12), y: y(4)))
+            eyePath.addQuadCurve(to: CGPoint(x: x(2), y: y(12)), control: CGPoint(x: x(12), y: y(20)))
+            context.fill(eyePath, with: .color(color))
+
+            // White of eye
+            var whitePath = Path()
+            whitePath.addEllipse(in: CGRect(x: x(8), y: y(8), width: 8 * scale, height: 8 * scale))
+            context.fill(whitePath, with: .color(Color(.systemBackground)))
+
+            // Pupil
+            var pupilPath = Path()
+            pupilPath.addEllipse(in: CGRect(x: x(10), y: y(10), width: 4 * scale, height: 4 * scale))
+            context.fill(pupilPath, with: .color(color))
+        }
+    }
+}
+
+// MARK: - Surveillance Icon (Radio Waves)
+
+/// Custom surveillance icon - dot with horizontal radio waves
+public struct SurveillancePinIcon: View {
+    public var color: Color = .primary
+
+    public init(color: Color = .primary) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            let centerX = x(12)
+            let centerY = y(12)
+
+            // Center dot
+            var dotPath = Path()
+            dotPath.addEllipse(in: CGRect(x: centerX - 2 * scale, y: centerY - 2 * scale, width: 4 * scale, height: 4 * scale))
+            context.fill(dotPath, with: .color(color))
+
+            // Left waves
+            context.stroke(
+                Path { p in
+                    p.addArc(center: CGPoint(x: centerX, y: centerY), radius: 5 * scale, startAngle: .degrees(150), endAngle: .degrees(210), clockwise: false)
+                },
+                with: .color(color),
+                lineWidth: 2 * scale
+            )
+            context.stroke(
+                Path { p in
+                    p.addArc(center: CGPoint(x: centerX, y: centerY), radius: 8 * scale, startAngle: .degrees(150), endAngle: .degrees(210), clockwise: false)
+                },
+                with: .color(color),
+                lineWidth: 2 * scale
+            )
+
+            // Right waves
+            context.stroke(
+                Path { p in
+                    p.addArc(center: CGPoint(x: centerX, y: centerY), radius: 5 * scale, startAngle: .degrees(-30), endAngle: .degrees(30), clockwise: false)
+                },
+                with: .color(color),
+                lineWidth: 2 * scale
+            )
+            context.stroke(
+                Path { p in
+                    p.addArc(center: CGPoint(x: centerX, y: centerY), radius: 8 * scale, startAngle: .degrees(-30), endAngle: .degrees(30), clockwise: false)
+                },
+                with: .color(color),
+                lineWidth: 2 * scale
+            )
+        }
+    }
+}
+
+// MARK: - Anchor Icon (Marine)
+
+/// Custom anchor icon for Marine pin type
+public struct AnchorPinIcon: View {
+    public var color: Color = .black
+
+    public init(color: Color = .black) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            var path = Path()
+            // Ring at top
+            path.addEllipse(in: CGRect(x: x(9), y: y(2), width: 6 * scale, height: 5 * scale))
+            // Vertical shaft
+            path.addRect(CGRect(x: x(11), y: y(7), width: 2 * scale, height: 11 * scale))
+            // Horizontal bar at top
+            path.addRect(CGRect(x: x(7), y: y(8), width: 10 * scale, height: 2 * scale))
+            // Bottom curve (anchor flukes)
+            path.move(to: CGPoint(x: x(4), y: y(20)))
+            path.addLine(to: CGPoint(x: x(7), y: y(17)))
+            path.addLine(to: CGPoint(x: x(12), y: y(18)))
+            path.addLine(to: CGPoint(x: x(17), y: y(17)))
+            path.addLine(to: CGPoint(x: x(20), y: y(20)))
+            path.addLine(to: CGPoint(x: x(17), y: y(20)))
+            path.addLine(to: CGPoint(x: x(12), y: y(21)))
+            path.addLine(to: CGPoint(x: x(7), y: y(20)))
+            path.closeSubpath()
+
+            context.fill(path, with: .color(color))
+        }
+    }
+}
+
+// MARK: - Camera Icon (Photo)
+
+/// Custom camera icon for Photo pin type
+public struct CameraPinIcon: View {
+    public var color: Color = .primary
+
+    public init(color: Color = .primary) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            // Camera body
+            var bodyPath = Path()
+            bodyPath.addRoundedRect(in: CGRect(x: x(3), y: y(7), width: 18 * scale, height: 12 * scale), cornerSize: CGSize(width: 2 * scale, height: 2 * scale))
+            context.fill(bodyPath, with: .color(color))
+
+            // Lens bump
+            var bumpPath = Path()
+            bumpPath.addRect(CGRect(x: x(8), y: y(4), width: 8 * scale, height: 3 * scale))
+            context.fill(bumpPath, with: .color(color))
+
+            // Lens circle (cutout)
+            var lensPath = Path()
+            lensPath.addEllipse(in: CGRect(x: x(8), y: y(9), width: 8 * scale, height: 8 * scale))
+            context.fill(lensPath, with: .color(Color(.systemBackground)))
+
+            // Inner lens
+            var innerLensPath = Path()
+            innerLensPath.addEllipse(in: CGRect(x: x(10), y: y(11), width: 4 * scale, height: 4 * scale))
+            context.fill(innerLensPath, with: .color(color))
+        }
+    }
+}
+
+// MARK: - Document Icon (Form7S)
+
+/// Custom document icon for Form7S pin type
+public struct DocumentPinIcon: View {
+    public var color: Color = .primary
+
+    public init(color: Color = .primary) {
+        self.color = color
+    }
+
+    public var body: some View {
+        Canvas { context, size in
+            let scale = min(size.width, size.height) / 24.0
+            let offsetX = (size.width - 24 * scale) / 2
+            let offsetY = (size.height - 24 * scale) / 2
+
+            func x(_ val: CGFloat) -> CGFloat { offsetX + val * scale }
+            func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
+
+            // Document outline
+            var docPath = Path()
+            docPath.move(to: CGPoint(x: x(6), y: y(2)))
+            docPath.addLine(to: CGPoint(x: x(14), y: y(2)))
+            docPath.addLine(to: CGPoint(x: x(18), y: y(6)))
+            docPath.addLine(to: CGPoint(x: x(18), y: y(22)))
+            docPath.addLine(to: CGPoint(x: x(6), y: y(22)))
+            docPath.closeSubpath()
+            context.fill(docPath, with: .color(color))
+
+            // Folded corner
+            var cornerPath = Path()
+            cornerPath.move(to: CGPoint(x: x(14), y: y(2)))
+            cornerPath.addLine(to: CGPoint(x: x(14), y: y(6)))
+            cornerPath.addLine(to: CGPoint(x: x(18), y: y(6)))
+            cornerPath.closeSubpath()
+            context.fill(cornerPath, with: .color(Color(.systemBackground)))
+
+            // Lines
+            var line1 = Path()
+            line1.addRect(CGRect(x: x(8), y: y(10), width: 8 * scale, height: 1.5 * scale))
+            context.fill(line1, with: .color(Color(.systemBackground)))
+
+            var line2 = Path()
+            line2.addRect(CGRect(x: x(8), y: y(14), width: 8 * scale, height: 1.5 * scale))
+            context.fill(line2, with: .color(Color(.systemBackground)))
+
+            var line3 = Path()
+            line3.addRect(CGRect(x: x(8), y: y(18), width: 5 * scale, height: 1.5 * scale))
+            context.fill(line3, with: .color(Color(.systemBackground)))
+        }
+    }
+}
+
 // MARK: - IFS/Artillery Missile Icon
 
 /// Custom missile/artillery icon for IFS form type
@@ -625,13 +897,19 @@ public struct NATOSymbolView: View {
 public struct NatoPinIconView: View {
     public let pinType: NatoType
     public var size: CGFloat = 20
-    public var color: Color = .primary
+    public var color: Color
     public var backgroundColor: Color = .clear
 
-    public init(pinType: NatoType, size: CGFloat = 20, color: Color = .primary, backgroundColor: Color = .clear) {
+    /// Get the standard icon color for a pin type
+    /// Uses black for all icons for better visibility against transparent background (matching Android)
+    public static func iconColor(for pinType: NatoType) -> Color {
+        return .black
+    }
+
+    public init(pinType: NatoType, size: CGFloat = 20, color: Color? = nil, backgroundColor: Color = .clear) {
         self.pinType = pinType
         self.size = size
-        self.color = color
+        self.color = color ?? NatoPinIconView.iconColor(for: pinType)
         self.backgroundColor = backgroundColor
     }
 
@@ -639,32 +917,20 @@ public struct NatoPinIconView: View {
         Group {
             switch pinType {
             case .infantry:
-                Image(systemName: "flag.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                FlagPinIcon(color: color)
 
             case .intelligence:
-                Image(systemName: "eye.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                EyePinIcon(color: color)
 
             case .surveillance:
-                Image(systemName: "sensor.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                SurveillancePinIcon(color: color)
 
             case .artillery:
                 MilitaryTechIcon()
                     .fill(color)
 
             case .marine:
-                Image(systemName: "anchor.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                AnchorPinIcon(color: color)
 
             case .droneObserved:
                 DronePinIcon()
@@ -674,16 +940,10 @@ public struct NatoPinIconView: View {
                 TentIcon(color: color)
 
             case .photo:
-                Image(systemName: "camera.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                CameraPinIcon(color: color)
 
             case .form7S:
-                Image(systemName: "doc.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(color)
+                DocumentPinIcon(color: color)
 
             case .formIFS:
                 IFSMissileIcon()
@@ -827,29 +1087,30 @@ public class PinMarkerImageCache {
             let rect = CGRect(origin: .zero, size: size)
             let ctx = context.cgContext
 
-            // Draw circular background
-            UIColor.systemBackground.withAlphaComponent(0.9).setFill()
+            // Draw circular background with 50% transparency (matching Android)
+            UIColor.systemBackground.withAlphaComponent(0.5).setFill()
             ctx.fillEllipse(in: rect.insetBy(dx: 1, dy: 1))
 
-            // Draw border
-            markerColor(for: pinType).withAlphaComponent(0.5).setStroke()
-            ctx.setLineWidth(2)
-            ctx.strokeEllipse(in: rect.insetBy(dx: 2, dy: 2))
+            // Draw border (subtle gray)
+            UIColor.black.withAlphaComponent(0.3).setStroke()
+            ctx.setLineWidth(1)
+            ctx.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
 
             // Draw icon
             let iconRect = rect.insetBy(dx: 8, dy: 8)
             let iconColor = markerColor(for: pinType)
 
             if let sfSymbol = sfSymbolName(for: pinType) {
-                // Use SF Symbol with palette colors for reliable tinting
-                let sizeConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
-                let colorConfig = UIImage.SymbolConfiguration(paletteColors: [iconColor])
-                let config = sizeConfig.applying(colorConfig)
+                // Render SF Symbol via UIImageView for reliable tinting
+                let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
                 if let symbolImage = UIImage(systemName: sfSymbol, withConfiguration: config) {
-                    let symbolSize = symbolImage.size
-                    let x = (size.width - symbolSize.width) / 2
-                    let y = (size.height - symbolSize.height) / 2
-                    symbolImage.draw(at: CGPoint(x: x, y: y))
+                    let imageView = UIImageView(image: symbolImage)
+                    imageView.tintColor = iconColor
+                    imageView.contentMode = .center
+                    imageView.frame = CGRect(origin: .zero, size: size)
+
+                    // Render the image view into the current context
+                    imageView.layer.render(in: ctx)
                 }
             } else {
                 // Draw custom shape
@@ -859,16 +1120,8 @@ public class PinMarkerImageCache {
     }
 
     private func sfSymbolName(for pinType: NatoType) -> String? {
-        switch pinType {
-        case .infantry: return "flag.fill"
-        case .intelligence: return "eye.fill"
-        case .surveillance: return "sensor.fill"
-        case .marine: return "anchor.fill"
-        case .photo: return "camera.fill"
-        case .form7S: return "doc.fill"
-        case .artillery, .droneObserved, .op, .formIFS:
-            return nil // Custom icons
-        }
+        // All icons are now drawn manually for consistency
+        return nil
     }
 
     private func drawCustomIcon(for pinType: NatoType, in rect: CGRect, color: UIColor, context: CGContext) {
@@ -883,6 +1136,116 @@ public class PinMarkerImageCache {
         func y(_ val: CGFloat) -> CGFloat { offsetY + val * scale }
 
         switch pinType {
+        case .infantry:
+            // Flag icon
+            let path = UIBezierPath()
+            // Pole
+            path.append(UIBezierPath(rect: CGRect(x: x(5), y: y(4), width: 2 * scale, height: 16 * scale)))
+            // Flag
+            path.move(to: CGPoint(x: x(7), y: y(4)))
+            path.addLine(to: CGPoint(x: x(19), y: y(4)))
+            path.addLine(to: CGPoint(x: x(19), y: y(12)))
+            path.addLine(to: CGPoint(x: x(7), y: y(12)))
+            path.close()
+            path.fill()
+
+        case .intelligence:
+            // Eye icon
+            let eyePath = UIBezierPath()
+            // Eye outline (almond shape)
+            eyePath.move(to: CGPoint(x: x(2), y: y(12)))
+            eyePath.addQuadCurve(to: CGPoint(x: x(22), y: y(12)), controlPoint: CGPoint(x: x(12), y: y(4)))
+            eyePath.addQuadCurve(to: CGPoint(x: x(2), y: y(12)), controlPoint: CGPoint(x: x(12), y: y(20)))
+            eyePath.fill()
+            // Pupil (white circle with colored center)
+            UIColor.systemBackground.setFill()
+            UIBezierPath(ovalIn: CGRect(x: x(8), y: y(8), width: 8 * scale, height: 8 * scale)).fill()
+            color.setFill()
+            UIBezierPath(ovalIn: CGRect(x: x(10), y: y(10), width: 4 * scale, height: 4 * scale)).fill()
+
+        case .surveillance:
+            // Radio waves icon - dot with horizontal waves
+            let centerX = x(12)
+            let centerY = y(12)
+
+            // Center dot
+            UIBezierPath(ovalIn: CGRect(x: centerX - 2 * scale, y: centerY - 2 * scale, width: 4 * scale, height: 4 * scale)).fill()
+
+            // Horizontal waves
+            context.setLineWidth(2 * scale)
+
+            // Left waves
+            let leftWave1 = UIBezierPath(arcCenter: CGPoint(x: centerX, y: centerY), radius: 5 * scale, startAngle: .pi * 0.83, endAngle: .pi * 1.17, clockwise: true)
+            leftWave1.stroke()
+            let leftWave2 = UIBezierPath(arcCenter: CGPoint(x: centerX, y: centerY), radius: 8 * scale, startAngle: .pi * 0.83, endAngle: .pi * 1.17, clockwise: true)
+            leftWave2.stroke()
+
+            // Right waves
+            let rightWave1 = UIBezierPath(arcCenter: CGPoint(x: centerX, y: centerY), radius: 5 * scale, startAngle: -.pi * 0.17, endAngle: .pi * 0.17, clockwise: true)
+            rightWave1.stroke()
+            let rightWave2 = UIBezierPath(arcCenter: CGPoint(x: centerX, y: centerY), radius: 8 * scale, startAngle: -.pi * 0.17, endAngle: .pi * 0.17, clockwise: true)
+            rightWave2.stroke()
+
+        case .marine:
+            // Anchor icon
+            let path = UIBezierPath()
+            // Ring at top
+            path.append(UIBezierPath(ovalIn: CGRect(x: x(9), y: y(2), width: 6 * scale, height: 5 * scale)))
+            // Vertical shaft
+            path.append(UIBezierPath(rect: CGRect(x: x(11), y: y(7), width: 2 * scale, height: 11 * scale)))
+            // Horizontal bar at top
+            path.append(UIBezierPath(rect: CGRect(x: x(7), y: y(8), width: 10 * scale, height: 2 * scale)))
+            // Bottom curve (anchor flukes)
+            path.move(to: CGPoint(x: x(4), y: y(20)))
+            path.addLine(to: CGPoint(x: x(7), y: y(17)))
+            path.addLine(to: CGPoint(x: x(12), y: y(18)))
+            path.addLine(to: CGPoint(x: x(17), y: y(17)))
+            path.addLine(to: CGPoint(x: x(20), y: y(20)))
+            path.addLine(to: CGPoint(x: x(17), y: y(20)))
+            path.addLine(to: CGPoint(x: x(12), y: y(21)))
+            path.addLine(to: CGPoint(x: x(7), y: y(20)))
+            path.close()
+            path.fill()
+
+        case .photo:
+            // Camera icon
+            let path = UIBezierPath()
+            // Camera body
+            path.append(UIBezierPath(roundedRect: CGRect(x: x(3), y: y(7), width: 18 * scale, height: 12 * scale), cornerRadius: 2 * scale))
+            // Lens bump on top
+            path.append(UIBezierPath(rect: CGRect(x: x(8), y: y(4), width: 8 * scale, height: 3 * scale)))
+            path.fill()
+            // Lens circle (cutout)
+            UIColor.systemBackground.setFill()
+            UIBezierPath(ovalIn: CGRect(x: x(8), y: y(9), width: 8 * scale, height: 8 * scale)).fill()
+            color.setFill()
+            UIBezierPath(ovalIn: CGRect(x: x(10), y: y(11), width: 4 * scale, height: 4 * scale)).fill()
+
+        case .form7S:
+            // Document icon
+            let path = UIBezierPath()
+            // Document outline
+            path.move(to: CGPoint(x: x(6), y: y(2)))
+            path.addLine(to: CGPoint(x: x(14), y: y(2)))
+            path.addLine(to: CGPoint(x: x(18), y: y(6)))
+            path.addLine(to: CGPoint(x: x(18), y: y(22)))
+            path.addLine(to: CGPoint(x: x(6), y: y(22)))
+            path.close()
+            path.fill()
+            // Folded corner
+            UIColor.systemBackground.setFill()
+            let corner = UIBezierPath()
+            corner.move(to: CGPoint(x: x(14), y: y(2)))
+            corner.addLine(to: CGPoint(x: x(14), y: y(6)))
+            corner.addLine(to: CGPoint(x: x(18), y: y(6)))
+            corner.close()
+            corner.fill()
+            // Lines
+            color.setFill()
+            UIBezierPath(rect: CGRect(x: x(8), y: y(10), width: 8 * scale, height: 1.5 * scale)).fill()
+            UIBezierPath(rect: CGRect(x: x(8), y: y(14), width: 8 * scale, height: 1.5 * scale)).fill()
+            UIBezierPath(rect: CGRect(x: x(8), y: y(18), width: 5 * scale, height: 1.5 * scale)).fill()
+
         case .droneObserved:
             // Quadcopter drone
             let path = UIBezierPath()
@@ -958,20 +1321,8 @@ public class PinMarkerImageCache {
     }
 
     private func markerColor(for pinType: NatoType) -> UIColor {
-        switch pinType {
-        case .infantry, .marine:
-            return .systemRed
-        case .intelligence, .surveillance, .droneObserved:
-            return .systemOrange
-        case .artillery:
-            return .systemPurple
-        case .op:
-            return .systemGreen
-        case .photo:
-            return .systemBlue
-        case .form7S, .formIFS:
-            return .systemGray
-        }
+        // Use black for all icons for better visibility against transparent background (matching Android)
+        return .black
     }
 }
 

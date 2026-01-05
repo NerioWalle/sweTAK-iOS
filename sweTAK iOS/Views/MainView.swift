@@ -73,6 +73,10 @@ public struct MainView: View {
     @State private var showingIFSForm = false
     @State private var showingPhotoPicker = false
 
+    // Pin create dialog state (for long-press pin creation)
+    @State private var showingPinCreateDialog = false
+    @State private var pendingPinType: NatoType = .infantry
+
     // Share sheet for saving photos
     @State private var shareSheetImage: UIImage? = nil
     @State private var showingShareSheet = false
@@ -447,6 +451,17 @@ public struct MainView: View {
             PhotoCaptureView(coordinate: longPressCoordinate) { image, location, subject, description in
                 // Handle the captured photo with location, subject, and description
                 saveGeotaggedPhoto(image: image, location: location, subject: subject, description: description)
+            }
+        }
+        // Pin create dialog (from long-press menu)
+        .sheet(isPresented: $showingPinCreateDialog) {
+            PinCreateDialog(
+                isPresented: $showingPinCreateDialog,
+                latitude: longPressCoordinate.latitude,
+                longitude: longPressCoordinate.longitude,
+                pinType: pendingPinType
+            ) { pin in
+                pinsVM.addPin(pin)
             }
         }
         // Share sheet for saving photos to Files
@@ -1434,17 +1449,9 @@ public struct MainView: View {
             coordinate: longPressCoordinate,
             coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
             onPinChosen: { pinType in
-                let pin = NatoPin(
-                    id: pinsVM.generatePinId(),
-                    latitude: longPressCoordinate.latitude,
-                    longitude: longPressCoordinate.longitude,
-                    type: pinType,
-                    title: "",
-                    description: "",
-                    authorCallsign: ContactsViewModel.shared.myProfile?.callsign ?? "Unknown",
-                    originDeviceId: TransportCoordinator.shared.deviceId
-                )
-                pinsVM.addPin(pin)
+                // Store the selected pin type and show the create dialog
+                pendingPinType = pinType
+                showingPinCreateDialog = true
             },
             onFormChosen: { formType in
                 switch formType {
