@@ -8,6 +8,7 @@ public struct MethaneDetailScreen: View {
     @ObservedObject private var methaneVM = MethaneViewModel.shared
 
     let request: MethaneRequest
+    @State private var showingDuplicate = false
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -203,8 +204,16 @@ public struct MethaneDetailScreen: View {
                     SectionHeader(letter: "E", title: "EXPECTED RESPONSE")
                 }
 
-                // Delete section
+                // Action buttons section
                 Section {
+                    // Duplicate button
+                    Button {
+                        showingDuplicate = true
+                    } label: {
+                        Label("Duplicate Request", systemImage: "doc.on.doc")
+                    }
+
+                    // Delete button
                     Button(role: .destructive) {
                         methaneVM.deleteRequest(requestId: request.id)
                         dismiss()
@@ -216,10 +225,15 @@ public struct MethaneDetailScreen: View {
             .navigationTitle("METHANE Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
+                }
+            }
+            .sheet(isPresented: $showingDuplicate) {
+                NavigationStack {
+                    CreateMethaneScreen(duplicateFrom: request)
                 }
             }
         }

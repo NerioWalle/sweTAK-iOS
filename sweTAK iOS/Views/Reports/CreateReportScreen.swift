@@ -7,6 +7,9 @@ public struct CreateReportScreen: View {
     @ObservedObject private var reportsVM = ReportsViewModel.shared
     @ObservedObject private var contactsVM = ContactsViewModel.shared
 
+    // Optional report to duplicate from
+    private let duplicateFrom: Report?
+
     // Personnel Status fields
     @State private var woundedCount = ""
     @State private var deadCount = ""
@@ -31,7 +34,9 @@ public struct CreateReportScreen: View {
         !selectedRecipientIds.isEmpty && !capableCount.isEmpty
     }
 
-    public init() {}
+    public init(duplicateFrom: Report? = nil) {
+        self.duplicateFrom = duplicateFrom
+    }
 
     public var body: some View {
         NavigationStack {
@@ -190,6 +195,21 @@ public struct CreateReportScreen: View {
                     Image(systemName: "paperplane.fill")
                 }
                 .disabled(!isValid)
+            }
+        }
+        .onAppear {
+            // Pre-fill fields if duplicating from an existing report
+            if let source = duplicateFrom {
+                woundedCount = source.woundedCount > 0 ? String(source.woundedCount) : ""
+                deadCount = source.deadCount > 0 ? String(source.deadCount) : ""
+                capableCount = source.capableCount > 0 ? String(source.capableCount) : ""
+                replenishment = source.replenishment
+                fuel = source.fuel
+                ammunition = source.ammunition
+                equipment = source.equipment
+                readiness = source.readiness
+                readinessDetails = source.readinessDetails
+                // Recipients are intentionally NOT copied - user must select new ones
             }
         }
     }

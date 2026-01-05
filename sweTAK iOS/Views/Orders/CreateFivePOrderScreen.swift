@@ -10,6 +10,9 @@ public struct CreateFivePOrderScreen: View {
     @ObservedObject private var ordersVM = OrdersViewModel.shared
     @ObservedObject private var settingsVM = SettingsViewModel.shared
 
+    // Optional order to duplicate from
+    private let duplicateFrom: Order?
+
     // 5P fields
     @State private var orientation = ""
     @State private var mission = ""
@@ -32,7 +35,9 @@ public struct CreateFivePOrderScreen: View {
         case commandSignaling
     }
 
-    public init() {}
+    public init(duplicateFrom: Order? = nil) {
+        self.duplicateFrom = duplicateFrom
+    }
 
     public var body: some View {
         NavigationStack {
@@ -72,6 +77,17 @@ public struct CreateFivePOrderScreen: View {
                     Button("Done") {
                         focusedField = nil
                     }
+                }
+            }
+            .onAppear {
+                // Pre-fill fields if duplicating from an existing order
+                if let source = duplicateFrom {
+                    orientation = source.orientation
+                    mission = source.mission
+                    execution = source.execution
+                    logistics = source.logistics
+                    commandSignaling = source.commandSignaling
+                    // Recipients are intentionally NOT copied - user must select new ones
                 }
             }
         }

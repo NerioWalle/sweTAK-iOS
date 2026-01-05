@@ -7,6 +7,7 @@ public struct MedevacDetailScreen: View {
     @ObservedObject private var medevacVM = MedevacViewModel.shared
 
     let report: MedevacReport
+    @State private var showingDuplicate = false
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -207,8 +208,16 @@ public struct MedevacDetailScreen: View {
                     }
                 }
 
-                // Delete section
+                // Action buttons section
                 Section {
+                    // Duplicate button
+                    Button {
+                        showingDuplicate = true
+                    } label: {
+                        Label("Duplicate Report", systemImage: "doc.on.doc")
+                    }
+
+                    // Delete button
                     Button(role: .destructive) {
                         medevacVM.deleteReport(reportId: report.id)
                         dismiss()
@@ -220,10 +229,15 @@ public struct MedevacDetailScreen: View {
             .navigationTitle("MIST Report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
+                }
+            }
+            .sheet(isPresented: $showingDuplicate) {
+                NavigationStack {
+                    CreateMedevacScreen(duplicateFrom: report)
                 }
             }
         }

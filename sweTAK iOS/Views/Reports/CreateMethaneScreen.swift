@@ -10,6 +10,9 @@ public struct CreateMethaneScreen: View {
     @ObservedObject private var contactsVM = ContactsViewModel.shared
     @ObservedObject private var locationManager = LocationManager.shared
 
+    // Optional request to duplicate from
+    private let duplicateFrom: MethaneRequest?
+
     // Form state
     // M - Military details
     @State private var callsign = ""
@@ -55,7 +58,9 @@ public struct CreateMethaneScreen: View {
         contactsVM.contacts.filter { $0.deviceId != TransportCoordinator.shared.deviceId }
     }
 
-    public init() {}
+    public init(duplicateFrom: MethaneRequest? = nil) {
+        self.duplicateFrom = duplicateFrom
+    }
 
     public var body: some View {
         NavigationStack {
@@ -71,6 +76,33 @@ public struct CreateMethaneScreen: View {
     }
 
     private func setupDefaults() {
+        // If duplicating, pre-fill all fields from source (except recipients)
+        if let source = duplicateFrom {
+            callsign = source.callsign
+            unit = source.unit
+            incidentLocation = source.incidentLocation
+            if let lat = source.incidentLatitude, let lon = source.incidentLongitude {
+                incidentCoordinates = String(format: "%.6f, %.6f", lat, lon)
+            }
+            incidentTime = source.incidentTime
+            incidentType = source.incidentType
+            hazards = source.hazards
+            approachRoutes = source.approachRoutes
+            hlsLocation = source.hlsLocation
+            if let hlsLat = source.hlsLatitude, let hlsLon = source.hlsLongitude {
+                hlsCoordinates = String(format: "%.6f, %.6f", hlsLat, hlsLon)
+            }
+            casualtyCountP1 = source.casualtyCountP1 > 0 ? String(source.casualtyCountP1) : ""
+            casualtyCountP2 = source.casualtyCountP2 > 0 ? String(source.casualtyCountP2) : ""
+            casualtyCountP3 = source.casualtyCountP3 > 0 ? String(source.casualtyCountP3) : ""
+            casualtyCountDeceased = source.casualtyCountDeceased > 0 ? String(source.casualtyCountDeceased) : ""
+            casualtyDetails = source.casualtyDetails
+            assetsPresent = source.assetsPresent
+            assetsRequired = source.assetsRequired
+            // Recipients are intentionally NOT copied - user must select new ones
+            return
+        }
+
         // Set default callsign from profile
         if let profile = contactsVM.myProfile {
             callsign = profile.callsign ?? ""

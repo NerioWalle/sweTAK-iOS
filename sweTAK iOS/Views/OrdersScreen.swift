@@ -9,6 +9,8 @@ public struct OrdersListScreen: View {
     @State private var selectedTab = 0
     @State private var selectedOrder: Order?
     @State private var showingOrderDetail = false
+    @State private var showingCreateOBO = false
+    @State private var showingCreateFiveP = false
 
     public init() {}
 
@@ -48,10 +50,36 @@ public struct OrdersListScreen: View {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            showingCreateOBO = true
+                        } label: {
+                            Label("OBO Order", systemImage: "doc.text")
+                        }
+                        Button {
+                            showingCreateFiveP = true
+                        } label: {
+                            Label("5P Order", systemImage: "list.number")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
             }
             .sheet(isPresented: $showingOrderDetail) {
                 if let order = selectedOrder {
                     OrderDetailScreen(order: order)
+                }
+            }
+            .sheet(isPresented: $showingCreateOBO) {
+                NavigationStack {
+                    CreateOBOOrderScreen()
+                }
+            }
+            .sheet(isPresented: $showingCreateFiveP) {
+                NavigationStack {
+                    CreateFivePOrderScreen()
                 }
             }
         }
@@ -191,6 +219,8 @@ public struct OrderDetailScreen: View {
 
     @ObservedObject private var ordersVM = OrdersViewModel.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showingDuplicateOBO = false
+    @State private var showingDuplicateFiveP = false
 
     public init(order: Order) {
         self.order = order
@@ -216,16 +246,71 @@ public struct OrderDetailScreen: View {
                     if order.direction == .outgoing && !order.recipientDeviceIds.isEmpty {
                         recipientStatusSection
                     }
+
+                    Divider()
+
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        // Duplicate button
+                        Button {
+                            if order.type == .obo {
+                                showingDuplicateOBO = true
+                            } else {
+                                showingDuplicateFiveP = true
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.on.doc")
+                                Text("Duplicate Order")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+
+                        // Delete button
+                        Button(role: .destructive) {
+                            ordersVM.deleteOrder(order)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Delete Order")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+                    }
+                    .padding(.top, 8)
                 }
                 .padding()
             }
             .navigationTitle(order.type.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
+                }
+            }
+            .sheet(isPresented: $showingDuplicateOBO) {
+                NavigationStack {
+                    CreateOBOOrderScreen(
+                        duplicateFrom: order
+                    )
+                }
+            }
+            .sheet(isPresented: $showingDuplicateFiveP) {
+                NavigationStack {
+                    CreateFivePOrderScreen(
+                        duplicateFrom: order
+                    )
                 }
             }
         }
