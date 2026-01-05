@@ -2024,42 +2024,373 @@ struct ShareSheet: UIViewControllerRepresentable {
 
 // MARK: - Combined Reports List View
 
-/// Combined view showing both PEDARS and MIST reports with tab selection
+/// Wrapper type for unified report list
+enum CombinedReportItem: Identifiable {
+    case pedars(Report)
+    case mist(MedevacReport)
+
+    var id: String {
+        switch self {
+        case .pedars(let report): return "pedars-\(report.id)"
+        case .mist(let report): return "mist-\(report.id)"
+        }
+    }
+
+    var createdAtMillis: Int64 {
+        switch self {
+        case .pedars(let report): return report.createdAtMillis
+        case .mist(let report): return report.createdAtMillis
+        }
+    }
+
+    var direction: ReportDirection {
+        switch self {
+        case .pedars(let report): return report.direction
+        case .mist(let report): return report.direction == .incoming ? .incoming : .outgoing
+        }
+    }
+
+    var isRead: Bool {
+        switch self {
+        case .pedars(let report): return report.isRead
+        case .mist(let report): return report.isRead
+        }
+    }
+
+    var typeLabel: String {
+        switch self {
+        case .pedars: return "PEDARS"
+        case .mist: return "MIST"
+        }
+    }
+
+    var typeColor: Color {
+        switch self {
+        case .pedars: return .blue
+        case .mist: return .orange
+        }
+    }
+}
+
+/// Combined view showing both PEDARS and MIST reports with Incoming/Outgoing tabs
 struct CombinedReportsListView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var reportsVM = ReportsViewModel.shared
     @ObservedObject private var medevacVM = MedevacViewModel.shared
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
 
     @State private var selectedTab = 0
+    @State private var selectedPedarsReport: Report?
+    @State private var selectedMistReport: MedevacReport?
+    @State private var showingCreatePedars = false
+    @State private var showingCreateMist = false
+    @State private var showingCreateMenu = false
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd/MM HH:mm"
+        return formatter
+    }
+
+    // Combine all reports
+    private var allIncomingReports: [CombinedReportItem] {
+        let pedars = reportsVM.incomingReports.map { CombinedReportItem.pedars($0) }
+        let mist = medevacVM.incomingReports.map { CombinedReportItem.mist($0) }
+        return (pedars + mist).sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    private var allOutgoingReports: [CombinedReportItem] {
+        let pedars = reportsVM.outgoingReports.map { CombinedReportItem.pedars($0) }
+        let mist = medevacVM.outgoingReports.map { CombinedReportItem.mist($0) }
+        return (pedars + mist).sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    private var unreadCount: Int {
+        reportsVM.unreadIncomingCount + medevacVM.unreadIncomingCount
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Segmented control for report types
-                Picker("Report Type", selection: $selectedTab) {
-                    Text("PEDARS (\(reportsVM.reports.count))").tag(0)
-                    Text("MIST (\(medevacVM.reports.count))").tag(1)
+                // Incoming/Outgoing tabs
+                Picker("Direction", selection: $selectedTab) {
+                    HStack {
+                        Text("Incoming (\(allIncomingReports.count))")
+                        if unreadCount > 0 {
+                            Circle()
+                                .fill(.red)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                    .tag(0)
+
+                    Text("Outgoing (\(allOutgoingReports.count))")
+                        .tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding()
 
-                // Content based on selected tab
+                // Content
                 if selectedTab == 0 {
-                    ReportsListScreen()
+                    incomingList
                 } else {
-                    MedevacListScreen()
+                    outgoingList
                 }
             }
             .navigationTitle("Reports")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            showingCreatePedars = true
+                        } label: {
+                            Label("PEDARS Report", systemImage: "doc.text")
+                        }
+
+                        Button {
+                            showingCreateMist = true
+                        } label: {
+                            Label("MIST Report", systemImage: "cross.case")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $selectedPedarsReport) { report in
+                ReportDetailScreen(report: report)
+            }
+            .sheet(item: $selectedMistReport) { report in
+                MedevacDetailScreen(report: report)
+            }
+            .sheet(isPresented: $showingCreatePedars) {
+                CreateReportScreen()
+            }
+            .sheet(isPresented: $showingCreateMist) {
+                CreateMedevacScreen()
+            }
+        }
+    }
+
+    private var incomingList: some View {
+        Group {
+            if allIncomingReports.isEmpty {
+                emptyState(
+                    icon: "doc.text",
+                    title: "No incoming reports",
+                    subtitle: "Reports sent to you will appear here."
+                )
+            } else {
+                List {
+                    ForEach(allIncomingReports) { item in
+                        CombinedReportRow(item: item, dateFormatter: dateFormatter, statuses: nil)
+                            .onTapGesture {
+                                switch item {
+                                case .pedars(let report):
+                                    reportsVM.markAsRead(reportId: report.id)
+                                    selectedPedarsReport = report
+                                case .mist(let report):
+                                    medevacVM.markAsRead(reportId: report.id)
+                                    selectedMistReport = report
+                                }
+                            }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let item = allIncomingReports[index]
+                            switch item {
+                            case .pedars(let report):
+                                reportsVM.deleteReport(reportId: report.id)
+                            case .mist(let report):
+                                medevacVM.deleteReport(reportId: report.id)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private var outgoingList: some View {
+        Group {
+            if allOutgoingReports.isEmpty {
+                emptyState(
+                    icon: "paperplane",
+                    title: "No outgoing reports",
+                    subtitle: "Reports you send will appear here."
+                )
+            } else {
+                List {
+                    ForEach(allOutgoingReports) { item in
+                        CombinedReportRow(
+                            item: item,
+                            dateFormatter: dateFormatter,
+                            statuses: getStatuses(for: item)
+                        )
+                        .onTapGesture {
+                            switch item {
+                            case .pedars(let report):
+                                selectedPedarsReport = report
+                            case .mist(let report):
+                                selectedMistReport = report
+                            }
+                        }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let item = allOutgoingReports[index]
+                            switch item {
+                            case .pedars(let report):
+                                reportsVM.deleteReport(reportId: report.id)
+                            case .mist(let report):
+                                medevacVM.deleteReport(reportId: report.id)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private func getStatuses(for item: CombinedReportItem) -> (delivered: Int, read: Int, total: Int)? {
+        switch item {
+        case .pedars(let report):
+            let statuses = reportsVM.getStatusesForReport(reportId: report.id)
+            return (
+                delivered: statuses.filter { $0.isDelivered }.count,
+                read: statuses.filter { $0.isRead }.count,
+                total: report.recipientDeviceIds.count
+            )
+        case .mist(let report):
+            let statuses = medevacVM.getStatusesForReport(reportId: report.id)
+            return (
+                delivered: statuses.filter { $0.isDelivered }.count,
+                read: statuses.filter { $0.isRead }.count,
+                total: report.recipientDeviceIds.count
+            )
+        }
+    }
+
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+
+            Text(title)
+                .font(.headline)
+
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}
+
+// MARK: - Combined Report Row
+
+private struct CombinedReportRow: View {
+    let item: CombinedReportItem
+    let dateFormatter: DateFormatter
+    let statuses: (delivered: Int, read: Int, total: Int)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Unread indicator
+            if item.direction == .incoming && !item.isRead {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    // Type badge
+                    Text(item.typeLabel)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(item.typeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(item.typeColor.opacity(0.15))
+                        .cornerRadius(4)
+
+                    // Status badge (for PEDARS)
+                    if case .pedars(let report) = item {
+                        Text(report.readiness.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(report.readiness.color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(report.readiness.color.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+
+                    // Priority badge (for MIST)
+                    if case .mist(let report) = item {
+                        Text(report.priority.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(report.priority.color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(report.priority.color.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+
+                    Spacer()
+
+                    Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(item.createdAtMillis) / 1000)))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // Sender/recipient info
+                switch item {
+                case .pedars(let report):
+                    if report.direction == .incoming {
+                        Text("From: \(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)")
+                            .font(.subheadline)
+                    } else if let statuses = statuses {
+                        Text("To: \(statuses.total) recipient\(statuses.total == 1 ? "" : "s")")
+                            .font(.subheadline)
+                        if statuses.total > 0 {
+                            Text("Delivered: \(statuses.delivered), Read: \(statuses.read)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                case .mist(let report):
+                    if report.direction == .incoming {
+                        Text("Patient: \(report.soldierName) - From: \(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)")
+                            .font(.subheadline)
+                    } else if let statuses = statuses {
+                        Text("Patient: \(report.soldierName) - To: \(statuses.total) recipient\(statuses.total == 1 ? "" : "s")")
+                            .font(.subheadline)
+                        if statuses.total > 0 {
+                            Text("Delivered: \(statuses.delivered), Read: \(statuses.read)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
         }
+        .padding(.vertical, 4)
     }
 }
 

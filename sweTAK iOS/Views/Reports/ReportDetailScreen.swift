@@ -59,9 +59,7 @@ public struct ReportDetailScreen: View {
                 }
             }
             .sheet(isPresented: $showingDuplicate) {
-                NavigationStack {
-                    CreateReportScreen(duplicateFrom: report)
-                }
+                CreateReportScreen(duplicateFrom: report)
             }
         }
     }

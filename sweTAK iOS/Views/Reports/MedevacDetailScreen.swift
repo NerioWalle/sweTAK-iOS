@@ -22,209 +22,226 @@ public struct MedevacDetailScreen: View {
 
     public var body: some View {
         NavigationStack {
-            List {
-                // Header section
-                Section {
-                    HStack {
-                        PriorityBadge(priority: report.priority)
-                        Spacer()
-                        Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(report.createdAtMillis) / 1000)))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Text("Patient")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(report.soldierName)
-                            .fontWeight(.semibold)
-                    }
-
-                    if report.direction == .incoming {
-                        HStack {
-                            Text("From")
-                            Spacer()
-                            Text(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        let statuses = medevacVM.getStatusesForReport(reportId: report.id)
-                        HStack {
-                            Text("Recipients")
-                            Spacer()
-                            Text("\(report.recipientDeviceIds.count)")
-                                .foregroundColor(.secondary)
-                        }
-
-                        let deliveredCount = statuses.filter { $0.isDelivered }.count
-                        let readCount = statuses.filter { $0.isRead }.count
-
-                        HStack {
-                            Text("Status")
-                            Spacer()
-                            Text("Delivered: \(deliveredCount), Read: \(readCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-
-                // Patient Information
-                Section {
-                    DetailRow(label: "Priority", value: report.priority.displayName)
-                    DetailRow(label: "Age", value: report.ageInfo)
-                    DetailRow(label: "Time of Incident", value: report.incidentTime)
-                } header: {
-                    Text("PATIENT INFORMATION")
-                        .foregroundColor(.blue)
-                }
-
-                // Injury Information
-                Section {
-                    if !report.mechanismOfInjury.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Mechanism of Injury")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(report.mechanismOfInjury)
-                        }
-                    }
-
-                    if !report.injuryDescription.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Injury Description")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(report.injuryDescription)
-                        }
-                    }
-
-                    if !report.signsSymptoms.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Signs & Symptoms")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(report.signsSymptoms)
-                        }
-                    }
-                } header: {
-                    Text("INJURY INFORMATION")
-                        .foregroundColor(.blue)
-                }
-
-                // Vital Parameters
-                if !report.pulse.isEmpty || !report.bodyTemperature.isEmpty {
+            VStack(spacing: 0) {
+                List {
+                    // Header section
                     Section {
-                        if !report.pulse.isEmpty {
+                        HStack {
+                            PriorityBadge(priority: report.priority)
+                            Spacer()
+                            Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(report.createdAtMillis) / 1000)))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack {
+                            Text("Patient")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(report.soldierName)
+                                .fontWeight(.semibold)
+                        }
+
+                        if report.direction == .incoming {
                             HStack {
-                                Label("Pulse", systemImage: "heart.fill")
-                                    .foregroundColor(.red)
+                                Text("From")
                                 Spacer()
-                                Text("\(report.pulse) BPM")
-                                    .font(.system(.body, design: .monospaced))
+                                Text(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            let statuses = medevacVM.getStatusesForReport(reportId: report.id)
+                            HStack {
+                                Text("Recipients")
+                                Spacer()
+                                Text("\(report.recipientDeviceIds.count)")
+                                    .foregroundColor(.secondary)
+                            }
+
+                            let deliveredCount = statuses.filter { $0.isDelivered }.count
+                            let readCount = statuses.filter { $0.isRead }.count
+
+                            HStack {
+                                Text("Status")
+                                Spacer()
+                                Text("Delivered: \(deliveredCount), Read: \(readCount)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    // Patient Information
+                    Section {
+                        DetailRow(label: "Priority", value: report.priority.displayName)
+                        DetailRow(label: "Age", value: report.ageInfo)
+                        DetailRow(label: "Time of Incident", value: report.incidentTime)
+                    } header: {
+                        Text("PATIENT INFORMATION")
+                            .foregroundColor(.blue)
+                    }
+
+                    // Injury Information
+                    Section {
+                        if !report.mechanismOfInjury.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Mechanism of Injury")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(report.mechanismOfInjury)
                             }
                         }
 
-                        if !report.bodyTemperature.isEmpty {
-                            HStack {
-                                Label("Temperature", systemImage: "thermometer")
-                                    .foregroundColor(.orange)
-                                Spacer()
-                                Text("\(report.bodyTemperature) °C")
-                                    .font(.system(.body, design: .monospaced))
+                        if !report.injuryDescription.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Injury Description")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(report.injuryDescription)
+                            }
+                        }
+
+                        if !report.signsSymptoms.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Signs & Symptoms")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(report.signsSymptoms)
                             }
                         }
                     } header: {
-                        Text("VITAL PARAMETERS")
+                        Text("INJURY INFORMATION")
                             .foregroundColor(.blue)
                     }
-                }
 
-                // Treatment
-                Section {
-                    if !report.treatmentActions.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Actions Taken")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(report.treatmentActions)
-                        }
-                    }
-
-                    if !report.medicinesGiven.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Medicines Given")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(report.medicinesGiven)
-                        }
-                    }
-                } header: {
-                    Text("TREATMENT")
-                        .foregroundColor(.blue)
-                }
-
-                // Caretaker
-                Section {
-                    DetailRow(label: "Caretaker", value: report.caretakerName)
-                } header: {
-                    Text("CARETAKER")
-                        .foregroundColor(.blue)
-                }
-
-                // Recipient Status (for outgoing reports)
-                if report.direction == .outgoing {
-                    let statuses = medevacVM.getStatusesForReport(reportId: report.id)
-                    if !statuses.isEmpty {
+                    // Vital Parameters
+                    if !report.pulse.isEmpty || !report.bodyTemperature.isEmpty {
                         Section {
-                            ForEach(statuses) { status in
+                            if !report.pulse.isEmpty {
                                 HStack {
-                                    Text(status.recipientCallsign ?? String(status.recipientDeviceId.prefix(8)))
-
+                                    Label("Pulse", systemImage: "heart.fill")
+                                        .foregroundColor(.red)
                                     Spacer()
+                                    Text("\(report.pulse) BPM")
+                                        .font(.system(.body, design: .monospaced))
+                                }
+                            }
 
-                                    HStack(spacing: 8) {
-                                        if status.isRead {
-                                            Label("Read", systemImage: "eye.fill")
-                                                .font(.caption)
-                                                .foregroundColor(.green)
-                                        } else if status.isDelivered {
-                                            Label("Delivered", systemImage: "checkmark.circle.fill")
-                                                .font(.caption)
-                                                .foregroundColor(.blue)
-                                        } else {
-                                            Label("Sent", systemImage: "paperplane.fill")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
+                            if !report.bodyTemperature.isEmpty {
+                                HStack {
+                                    Label("Temperature", systemImage: "thermometer")
+                                        .foregroundColor(.orange)
+                                    Spacer()
+                                    Text("\(report.bodyTemperature) °C")
+                                        .font(.system(.body, design: .monospaced))
                                 }
                             }
                         } header: {
-                            Text("RECIPIENT STATUS")
+                            Text("VITAL PARAMETERS")
                                 .foregroundColor(.blue)
+                        }
+                    }
+
+                    // Treatment
+                    Section {
+                        if !report.treatmentActions.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Actions Taken")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(report.treatmentActions)
+                            }
+                        }
+
+                        if !report.medicinesGiven.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Medicines Given")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(report.medicinesGiven)
+                            }
+                        }
+                    } header: {
+                        Text("TREATMENT")
+                            .foregroundColor(.blue)
+                    }
+
+                    // Caretaker
+                    Section {
+                        DetailRow(label: "Caretaker", value: report.caretakerName)
+                    } header: {
+                        Text("CARETAKER")
+                            .foregroundColor(.blue)
+                    }
+
+                    // Recipient Status (for outgoing reports)
+                    if report.direction == .outgoing {
+                        let statuses = medevacVM.getStatusesForReport(reportId: report.id)
+                        if !statuses.isEmpty {
+                            Section {
+                                ForEach(statuses) { status in
+                                    HStack {
+                                        Text(status.recipientCallsign ?? String(status.recipientDeviceId.prefix(8)))
+
+                                        Spacer()
+
+                                        HStack(spacing: 8) {
+                                            if status.isRead {
+                                                Label("Read", systemImage: "eye.fill")
+                                                    .font(.caption)
+                                                    .foregroundColor(.green)
+                                            } else if status.isDelivered {
+                                                Label("Delivered", systemImage: "checkmark.circle.fill")
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                            } else {
+                                                Label("Sent", systemImage: "paperplane.fill")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                    }
+                                }
+                            } header: {
+                                Text("RECIPIENT STATUS")
+                                    .foregroundColor(.blue)
+                            }
                         }
                     }
                 }
 
-                // Action buttons section
-                Section {
-                    // Duplicate button
+                // Action buttons outside the List
+                VStack(spacing: 12) {
                     Button {
                         showingDuplicate = true
                     } label: {
-                        Label("Duplicate Report", systemImage: "doc.on.doc")
+                        HStack {
+                            Image(systemName: "doc.on.doc")
+                            Text("Duplicate Report")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                     }
 
-                    // Delete button
-                    Button(role: .destructive) {
+                    Button {
                         medevacVM.deleteReport(reportId: report.id)
                         dismiss()
                     } label: {
-                        Label("Delete Report", systemImage: "trash")
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Report")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                     }
                 }
+                .padding()
             }
             .navigationTitle("MIST Report")
             .navigationBarTitleDisplayMode(.inline)
@@ -236,9 +253,7 @@ public struct MedevacDetailScreen: View {
                 }
             }
             .sheet(isPresented: $showingDuplicate) {
-                NavigationStack {
-                    CreateMedevacScreen(duplicateFrom: report)
-                }
+                CreateMedevacScreen(duplicateFrom: report)
             }
         }
     }

@@ -400,8 +400,9 @@ public final class TransportCoordinator: ObservableObject {
     /// Uses Android-compatible field names for cross-platform compatibility
     public func sendMethane(_ methane: MethaneRequest) {
         // Manually construct payload with Android-compatible field names
-        let payload: [String: Any] = [
-            "methaneId": methane.id,
+        // Note: Android expects "requestId" not "methaneId"
+        var payload: [String: Any] = [
+            "requestId": methane.id,
             "fromDeviceId": methane.senderDeviceId,
             "fromCallsign": methane.senderCallsign,
             "toDeviceIds": methane.recipientDeviceIds,
@@ -409,30 +410,40 @@ public final class TransportCoordinator: ObservableObject {
             // M - Military (callsign and unit)
             "callsign": methane.callsign,
             "unit": methane.unit,
-            // E - Exact location
-            "exactLocation": methane.incidentLocation,
-            "exactLocationLat": methane.incidentLatitude as Any,
-            "exactLocationLon": methane.incidentLongitude as Any,
+            // E - Exact location (Android expects incidentLocation, incidentLatitude, incidentLongitude)
+            "incidentLocation": methane.incidentLocation,
             // T - Time and type
             "incidentType": methane.incidentType,
             "incidentTime": methane.incidentTime,
             // H - Hazards
             "hazards": methane.hazards,
-            // A - Access routes and HLS
-            "accessRoutes": methane.approachRoutes,
+            // A - Approach routes and HLS (Android expects approachRoutes, hlsLocation, hlsLatitude, hlsLongitude)
+            "approachRoutes": methane.approachRoutes,
             "hlsLocation": methane.hlsLocation,
-            "accessRouteLat": methane.hlsLatitude as Any,
-            "accessRouteLon": methane.hlsLongitude as Any,
-            // N - Numbers (casualties)
-            "casualtiesP1": methane.casualtyCountP1,
-            "casualtiesP2": methane.casualtyCountP2,
-            "casualtiesP3": methane.casualtyCountP3,
-            "casualtiesDead": methane.casualtyCountDeceased,
+            // N - Numbers (Android expects casualtyCountP1, casualtyCountP2, casualtyCountP3, casualtyCountDeceased)
+            "casualtyCountP1": methane.casualtyCountP1,
+            "casualtyCountP2": methane.casualtyCountP2,
+            "casualtyCountP3": methane.casualtyCountP3,
+            "casualtyCountDeceased": methane.casualtyCountDeceased,
             "casualtyDetails": methane.casualtyDetails,
             // E - Emergency services (assets)
             "assetsPresent": methane.assetsPresent,
             "assetsRequired": methane.assetsRequired
         ]
+
+        // Add optional coordinates only if present
+        if let lat = methane.incidentLatitude {
+            payload["incidentLatitude"] = lat
+        }
+        if let lon = methane.incidentLongitude {
+            payload["incidentLongitude"] = lon
+        }
+        if let hlsLat = methane.hlsLatitude {
+            payload["hlsLatitude"] = hlsLat
+        }
+        if let hlsLon = methane.hlsLongitude {
+            payload["hlsLongitude"] = hlsLon
+        }
 
         let message = NetworkMessage(
             type: .methane,

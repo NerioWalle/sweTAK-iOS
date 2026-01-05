@@ -73,14 +73,10 @@ public struct OrdersListScreen: View {
                 }
             }
             .sheet(isPresented: $showingCreateOBO) {
-                NavigationStack {
-                    CreateOBOOrderScreen()
-                }
+                CreateOBOOrderScreen()
             }
             .sheet(isPresented: $showingCreateFiveP) {
-                NavigationStack {
-                    CreateFivePOrderScreen()
-                }
+                CreateFivePOrderScreen()
             }
         }
     }
@@ -148,6 +144,13 @@ private struct OrderListItem: View {
     let order: Order
     let recipientStatuses: [OrderRecipientStatus]
 
+    private var typeColor: Color {
+        switch order.type {
+        case .obo: return .blue
+        case .fiveP: return .purple
+        }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             // Unread indicator
@@ -158,11 +161,17 @@ private struct OrderListItem: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                // Header row
+                // Header row with type badge
                 HStack {
+                    // Type badge
                     Text(order.type.displayName)
-                        .font(.headline)
-                        .foregroundColor(.blue)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(typeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(typeColor.opacity(0.15))
+                        .cornerRadius(4)
 
                     Spacer()
 
@@ -300,18 +309,14 @@ public struct OrderDetailScreen: View {
                 }
             }
             .sheet(isPresented: $showingDuplicateOBO) {
-                NavigationStack {
-                    CreateOBOOrderScreen(
-                        duplicateFrom: order
-                    )
-                }
+                CreateOBOOrderScreen(
+                    duplicateFrom: order
+                )
             }
             .sheet(isPresented: $showingDuplicateFiveP) {
-                NavigationStack {
-                    CreateFivePOrderScreen(
-                        duplicateFrom: order
-                    )
-                }
+                CreateFivePOrderScreen(
+                    duplicateFrom: order
+                )
             }
         }
     }
