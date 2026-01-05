@@ -135,24 +135,97 @@ struct MapButton: View {
 public struct RoutesListSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var routesVM = RoutesViewModel.shared
-    @State private var selectedTab = 0
 
     public init() {}
 
+    /// Unified route item for display
+    private enum UnifiedRoute: Identifiable {
+        case recorded(BreadcrumbRoute)
+        case planned(PlannedRoute)
+
+        var id: String {
+            switch self {
+            case .recorded(let route): return "recorded_\(route.id)"
+            case .planned(let route): return "planned_\(route.id)"
+            }
+        }
+
+        var createdAt: Date {
+            switch self {
+            case .recorded(let route): return route.startTime
+            case .planned(let route): return route.createdAt
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .recorded(let route): return route.name ?? "Untitled Route"
+            case .planned(let route): return route.name
+            }
+        }
+
+        var isVisible: Bool {
+            switch self {
+            case .recorded(let route): return route.isVisible
+            case .planned(let route): return route.isVisible
+            }
+        }
+
+        var typeLabel: String {
+            switch self {
+            case .recorded: return "Recorded"
+            case .planned: return "Planned"
+            }
+        }
+
+        var typeColor: Color {
+            switch self {
+            case .recorded: return .orange
+            case .planned: return .cyan
+            }
+        }
+    }
+
+    /// All routes combined and sorted by creation date (newest first)
+    private var allRoutes: [UnifiedRoute] {
+        let recorded = routesVM.breadcrumbRoutes.map { UnifiedRoute.recorded($0) }
+        let planned = routesVM.plannedRoutes.map { UnifiedRoute.planned($0) }
+        return (recorded + planned).sorted { $0.createdAt > $1.createdAt }
+    }
+
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("", selection: $selectedTab) {
-                    Text("Breadcrumbs (\(routesVM.breadcrumbRoutes.count))").tag(0)
-                    Text("Planned (\(routesVM.plannedRoutes.count))").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding()
-
-                if selectedTab == 0 {
-                    breadcrumbsList
+            Group {
+                if allRoutes.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("No routes")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Text("Create a route by tapping\n\"Create Route\" in the map menu")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    plannedRoutesList
+                    List {
+                        ForEach(allRoutes) { route in
+                            UnifiedRouteRow(
+                                route: route,
+                                onToggleVisibility: { toggleVisibility(for: route) },
+                                onDelete: { deleteRoute(route) }
+                            )
+                        }
+                        .onDelete { offsets in
+                            for offset in offsets {
+                                deleteRoute(allRoutes[offset])
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Routes")
@@ -167,57 +240,90 @@ public struct RoutesListSheet: View {
         }
     }
 
-    private var breadcrumbsList: some View {
-        Group {
-            if routesVM.breadcrumbRoutes.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("No recorded routes")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(routesVM.breadcrumbRoutes) { route in
-                        RouteRow(route: route, onToggleVisibility: {
-                            routesVM.toggleBreadcrumbVisibility(id: route.id)
-                        })
-                    }
-                    .onDelete { offsets in
-                        routesVM.deleteBreadcrumbRoutes(at: offsets)
-                    }
-                }
-                .listStyle(.plain)
-            }
+    private func toggleVisibility(for route: UnifiedRoute) {
+        switch route {
+        case .recorded(let r):
+            routesVM.toggleBreadcrumbVisibility(id: r.id)
+        case .planned(let r):
+            routesVM.togglePlannedRouteVisibility(id: r.id)
         }
     }
 
-    private var plannedRoutesList: some View {
-        Group {
-            if routesVM.plannedRoutes.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "map")
-                        .font(.largeTitle)
+    private func deleteRoute(_ route: UnifiedRoute) {
+        switch route {
+        case .recorded(let r):
+            routesVM.deleteBreadcrumbRoute(id: r.id)
+        case .planned(let r):
+            routesVM.deletePlannedRoute(id: r.id)
+        }
+    }
+
+    // MARK: - Unified Route Row (nested)
+
+    private struct UnifiedRouteRow: View {
+        let route: UnifiedRoute
+        let onToggleVisibility: () -> Void
+        let onDelete: () -> Void
+
+        var body: some View {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(route.name)
+                            .font(.headline)
+
+                        // Type tag
+                        Text(route.typeLabel)
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(route.typeColor)
+                            .cornerRadius(4)
+                    }
+
+                    routeDetails
+                        .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("No planned routes")
+
+                    Text(formatDate(route.createdAt))
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(routesVM.plannedRoutes) { route in
-                        PlannedRouteRow(route: route, onToggleVisibility: {
-                            routesVM.togglePlannedRouteVisibility(id: route.id)
-                        })
-                    }
-                    .onDelete { offsets in
-                        routesVM.deletePlannedRoutes(at: offsets)
-                    }
-                }
-                .listStyle(.plain)
+
+                Spacer()
+
+                Toggle("", isOn: Binding(
+                    get: { route.isVisible },
+                    set: { _ in onToggleVisibility() }
+                ))
+                .labelsHidden()
             }
+            .padding(.vertical, 4)
+        }
+
+        @ViewBuilder
+        private var routeDetails: some View {
+            switch route {
+            case .recorded(let r):
+                HStack(spacing: 12) {
+                    Label(r.distanceString, systemImage: "ruler")
+                    Label(r.durationString, systemImage: "clock")
+                }
+            case .planned(let r):
+                HStack(spacing: 12) {
+                    Label(r.distanceString, systemImage: "ruler")
+                    Label("\(r.waypoints.count) pts", systemImage: "mappin")
+                }
+            }
+        }
+
+        private func formatDate(_ date: Date) -> String {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return formatter.string(from: date)
         }
     }
 }

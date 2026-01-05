@@ -77,6 +77,13 @@ public struct MainView: View {
     @State private var showingPinCreateDialog = false
     @State private var pendingPinType: NatoType = .infantry
 
+    // Route planning state
+    @StateObject private var planningState = RoutePlanningState()
+
+    // Route menu dialogs
+    @State private var showingRecordedRoutesDialog = false
+    @State private var showingPlannedRoutesDialog = false
+
     // Share sheet for saving photos
     @State private var shareSheetImage: UIImage? = nil
     @State private var showingShareSheet = false
@@ -241,6 +248,11 @@ public struct MainView: View {
 
             // Notification banners overlay
             notificationBannersOverlay
+
+            // Route planning overlay (when in planning mode)
+            RoutePlanningOverlay(planningState: planningState) { route in
+                routesVM.addPlannedRoute(route)
+            }
         }
         .ignoresSafeArea(edges: .all)
         .onAppear {
@@ -586,10 +598,19 @@ public struct MainView: View {
             followMode: mapVM.followMe,
             myPosition: mapVM.myPosition,
             peerPositions: Array(mapVM.peerPositions.values),
+            planningWaypoints: planningState.waypoints,
             onLongPress: { coordinate, screenPoint in
+                // Don't show long-press menu while planning routes
+                guard !planningState.isPlanning else { return }
                 longPressCoordinate = coordinate
                 longPressScreenPoint = screenPoint
                 showingLongPressMenu = true
+            },
+            onTap: { coordinate in
+                // Add waypoint when in route planning mode
+                if planningState.isPlanning {
+                    planningState.addWaypoint(coordinate)
+                }
             },
             onPinSelected: { pin in
                 selectedPin = pin
@@ -649,49 +670,34 @@ public struct MainView: View {
 
     private var layersMenuButton: some View {
         Menu {
-            ForEach(MapStyle.allCases, id: \.self) { style in
-                Button {
-                    settingsVM.setFullMapStyle(style)
-                } label: {
-                    HStack {
-                        Label(style.displayName, systemImage: style.icon)
-                        if settingsVM.currentMapStyle == style {
-                            Image(systemName: "checkmark")
+            // Map style section
+            Section("Map Style") {
+                ForEach(MapStyle.allCases, id: \.self) { style in
+                    Button {
+                        settingsVM.setFullMapStyle(style)
+                    } label: {
+                        HStack {
+                            Label(style.displayName, systemImage: style.icon)
+                            if settingsVM.currentMapStyle == style {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
             }
 
-            Divider()
-
-            Menu("Recorded Routes") {
+            // Routes section
+            Section("Routes") {
                 Button {
-                    showingRecordingControls = true
+                    planningState.startPlanning()
                 } label: {
-                    Label(
-                        locationManager.isRecordingBreadcrumbs ? "Stop Recording" : "Start Recording",
-                        systemImage: locationManager.isRecordingBreadcrumbs ? "stop.fill" : "record.circle"
-                    )
+                    Label("Create Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                 }
 
                 Button {
                     showingRoutes = true
                 } label: {
-                    Label("View Routes", systemImage: "list.bullet")
-                }
-            }
-
-            Menu("Planned Routes") {
-                Button {
-                    // TODO: Start route planning mode
-                } label: {
-                    Label("Plan Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                }
-
-                Button {
-                    showingRoutes = true
-                } label: {
-                    Label("View Routes", systemImage: "list.bullet")
+                    Label("List Routes", systemImage: "list.bullet")
                 }
             }
         } label: {
@@ -1620,7 +1626,9 @@ struct MapViewRepresentable: UIViewRepresentable {
     let followMode: Bool
     let myPosition: CLLocationCoordinate2D?
     let peerPositions: [PeerPosition]
+    let planningWaypoints: [CLLocationCoordinate2D]
     var onLongPress: ((CLLocationCoordinate2D, CGPoint) -> Void)?
+    var onTap: ((CLLocationCoordinate2D) -> Void)?
     var onPinSelected: ((NatoPin) -> Void)?
     var onUserLocationScreenUpdate: ((CGPoint?) -> Void)?
     var onUserDraggedMap: (() -> Void)?
@@ -1655,6 +1663,14 @@ struct MapViewRepresentable: UIViewRepresentable {
         longPressGesture.minimumPressDuration = 0.5
         mapView.addGestureRecognizer(longPressGesture)
 
+        // Add tap gesture recognizer for route planning
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tapGesture.require(toFail: longPressGesture)
+        mapView.addGestureRecognizer(tapGesture)
+
         // Add pan gesture recognizer to detect user dragging
         let panGesture = UIPanGestureRecognizer(
             target: context.coordinator,
@@ -1684,6 +1700,9 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         // Update breadcrumb overlay
         updateBreadcrumbOverlay(mapView)
+
+        // Update planning overlay (waypoints and polyline)
+        updatePlanningOverlay(mapView)
 
         // Report user location screen position for crosshair line
         if let userLocation = mapView.userLocation.location?.coordinate {
@@ -1818,6 +1837,46 @@ struct MapViewRepresentable: UIViewRepresentable {
                 mapView.addOverlay(polyline)
             }
         }
+
+        // Add visible planned routes
+        for route in RoutesViewModel.shared.visiblePlannedRoutes {
+            if route.waypoints.count >= 2 {
+                let coordinates = route.waypoints.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                let polyline = SavedRoutePolyline(coordinates: coordinates, count: coordinates.count)
+                mapView.addOverlay(polyline)
+            }
+        }
+    }
+
+    private func updatePlanningOverlay(_ mapView: MKMapView) {
+        // Remove existing planning overlays and annotations
+        let existingOverlays = mapView.overlays.filter { $0 is PlanningRoutePolyline }
+        mapView.removeOverlays(existingOverlays)
+
+        let existingWaypoints = mapView.annotations.compactMap { $0 as? WaypointAnnotation }
+        mapView.removeAnnotations(existingWaypoints)
+
+        // Add planning waypoints if any
+        guard !planningWaypoints.isEmpty else { return }
+
+        // Add waypoint annotations
+        for (index, coordinate) in planningWaypoints.enumerated() {
+            let isFirst = index == 0
+            let isLast = index == planningWaypoints.count - 1
+            let annotation = WaypointAnnotation(
+                index: index,
+                coordinate: coordinate,
+                isFirst: isFirst,
+                isLast: isLast
+            )
+            mapView.addAnnotation(annotation)
+        }
+
+        // Add planning polyline if there are at least 2 waypoints
+        if planningWaypoints.count >= 2 {
+            let polyline = PlanningRoutePolyline(coordinates: planningWaypoints, count: planningWaypoints.count)
+            mapView.addOverlay(polyline)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1850,6 +1909,16 @@ struct MapViewRepresentable: UIViewRepresentable {
             }
         }
 
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+
+            let mapView = gesture.view as! MKMapView
+            let screenPoint = gesture.location(in: mapView)
+            let coordinate = mapView.convert(screenPoint, toCoordinateFrom: mapView)
+
+            parent.onTap?(coordinate)
+        }
+
         // Allow pan gesture to work simultaneously with map's built-in gestures
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
@@ -1859,6 +1928,71 @@ struct MapViewRepresentable: UIViewRepresentable {
             // Handle user location
             if annotation is MKUserLocation {
                 return nil
+            }
+
+            // Handle waypoint annotations for route planning
+            if let waypointAnnotation = annotation as? WaypointAnnotation {
+                let identifier = "WaypointMarker"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+
+                if view == nil {
+                    view = MKAnnotationView(annotation: waypointAnnotation, reuseIdentifier: identifier)
+                    view?.canShowCallout = false
+                } else {
+                    view?.annotation = waypointAnnotation
+                }
+
+                // Create waypoint marker image
+                let size: CGFloat = 28
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+                let image = renderer.image { ctx in
+                    let rect = CGRect(x: 0, y: 0, width: size, height: size)
+                    let color: UIColor
+                    if waypointAnnotation.isFirst {
+                        color = .systemGreen
+                    } else if waypointAnnotation.isLast {
+                        color = .systemRed
+                    } else {
+                        color = .systemCyan
+                    }
+
+                    // Draw circle background
+                    ctx.cgContext.setFillColor(color.cgColor)
+                    ctx.cgContext.fillEllipse(in: rect)
+
+                    // Draw border
+                    ctx.cgContext.setStrokeColor(UIColor.white.cgColor)
+                    ctx.cgContext.setLineWidth(2)
+                    ctx.cgContext.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+
+                    // Draw number or icon
+                    let textAttributes: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.boldSystemFont(ofSize: 12),
+                        .foregroundColor: UIColor.white
+                    ]
+
+                    let text: String
+                    if waypointAnnotation.isFirst {
+                        text = "S"  // Start
+                    } else if waypointAnnotation.isLast {
+                        text = "E"  // End
+                    } else {
+                        text = "\(waypointAnnotation.index + 1)"
+                    }
+
+                    let textSize = text.size(withAttributes: textAttributes)
+                    let textRect = CGRect(
+                        x: (size - textSize.width) / 2,
+                        y: (size - textSize.height) / 2,
+                        width: textSize.width,
+                        height: textSize.height
+                    )
+                    text.draw(in: textRect, withAttributes: textAttributes)
+                }
+
+                view?.image = image
+                view?.centerOffset = CGPoint(x: 0, y: 0)
+                return view
             }
 
             // Handle peer annotations
@@ -1938,6 +2072,15 @@ struct MapViewRepresentable: UIViewRepresentable {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 renderer.strokeColor = UIColor(parent.settingsVM.breadcrumbColor).withAlphaComponent(0.7)
                 renderer.lineWidth = 3
+                return renderer
+            }
+
+            // Handle planning route polyline overlays
+            if let polyline = overlay as? PlanningRoutePolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor.systemCyan
+                renderer.lineWidth = 4
+                renderer.lineDashPattern = [8, 4]  // Dashed line for planning
                 return renderer
             }
 
@@ -2029,6 +2172,24 @@ class SavedRoutePolyline: MKPolyline {}
 
 /// Polyline for crosshair-to-position line
 class CrosshairLinePolyline: MKPolyline {}
+
+/// Polyline for route planning
+class PlanningRoutePolyline: MKPolyline {}
+
+/// Annotation for planning waypoints
+class WaypointAnnotation: NSObject, MKAnnotation {
+    let index: Int
+    let isFirst: Bool
+    let isLast: Bool
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(index: Int, coordinate: CLLocationCoordinate2D, isFirst: Bool, isLast: Bool) {
+        self.index = index
+        self.coordinate = coordinate
+        self.isFirst = isFirst
+        self.isLast = isLast
+    }
+}
 
 // MARK: - Share Sheet
 
