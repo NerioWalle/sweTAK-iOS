@@ -312,17 +312,29 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send order
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendOrder(_ order: Order) {
-        let encoder = JSONEncoder()
-        guard let orderData = try? encoder.encode(order),
-              let orderDict = try? JSONSerialization.jsonObject(with: orderData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "orderId": order.id,
+            "type": order.type.rawValue,
+            "createdAtMillis": order.createdAtMillis,
+            "fromDeviceId": order.senderDeviceId,
+            "fromCallsign": order.senderCallsign,
+            "orientation": order.orientation,
+            "decision": order.decision,
+            "order": order.order,
+            "mission": order.mission,
+            "execution": order.execution,
+            "logistics": order.logistics,
+            "commandSignaling": order.commandSignaling,
+            "toDeviceIds": order.recipientDeviceIds
+        ]
 
         let message = NetworkMessage(
             type: .order,
             deviceId: deviceId,
-            payload: orderDict
+            payload: payload
         )
 
         sendMessage(message, to: order.recipientDeviceIds)
@@ -774,24 +786,38 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     private func handleOrder(_ payload: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              var order = try? JSONDecoder().decode(Order.self, from: data) else { return }
+        // Parse Android-compatible field names
+        // Android uses: orderId, fromDeviceId, fromCallsign, toDeviceIds
+        guard let orderId = payload["orderId"] as? String,
+              let typeString = payload["type"] as? String,
+              let type = OrderType(rawValue: typeString),
+              let createdAtMillis = payload["createdAtMillis"] as? Int64,
+              let fromDeviceId = payload["fromDeviceId"] as? String else { return }
 
-        // Override direction for incoming
-        order = Order(
-            id: order.id,
-            type: order.type,
-            createdAtMillis: order.createdAtMillis,
-            senderDeviceId: order.senderDeviceId,
-            senderCallsign: order.senderCallsign,
-            orientation: order.orientation,
-            decision: order.decision,
-            order: order.order,
-            mission: order.mission,
-            execution: order.execution,
-            logistics: order.logistics,
-            commandSignaling: order.commandSignaling,
-            recipientDeviceIds: order.recipientDeviceIds,
+        let fromCallsign = payload["fromCallsign"] as? String ?? ""
+        let orientation = payload["orientation"] as? String ?? ""
+        let decision = payload["decision"] as? String ?? ""
+        let orderField = payload["order"] as? String ?? ""
+        let mission = payload["mission"] as? String ?? ""
+        let execution = payload["execution"] as? String ?? ""
+        let logistics = payload["logistics"] as? String ?? ""
+        let commandSignaling = payload["commandSignaling"] as? String ?? ""
+        let toDeviceIds = payload["toDeviceIds"] as? [String] ?? []
+
+        let order = Order(
+            id: orderId,
+            type: type,
+            createdAtMillis: createdAtMillis,
+            senderDeviceId: fromDeviceId,
+            senderCallsign: fromCallsign,
+            orientation: orientation,
+            decision: decision,
+            order: orderField,
+            mission: mission,
+            execution: execution,
+            logistics: logistics,
+            commandSignaling: commandSignaling,
+            recipientDeviceIds: toDeviceIds,
             direction: .incoming,
             isRead: false
         )

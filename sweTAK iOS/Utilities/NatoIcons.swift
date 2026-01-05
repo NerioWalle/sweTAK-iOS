@@ -173,31 +173,36 @@ private struct CompassSouthPath: Shape {
 
 /// Custom tent/cabin icon for Observation Post
 public struct TentIcon: View {
-    public init() {}
+    public var color: Color = .primary
+    public var backgroundColor: Color = Color(.systemBackground)
+
+    public init(color: Color = .primary, backgroundColor: Color = Color(.systemBackground)) {
+        self.color = color
+        self.backgroundColor = backgroundColor
+    }
 
     public var body: some View {
         GeometryReader { geometry in
             let size = min(geometry.size.width, geometry.size.height)
-            let scale = size / 24.0
             let offsetX = (geometry.size.width - size) / 2
             let offsetY = (geometry.size.height - size) / 2
 
             ZStack {
                 // Tent roof (triangle)
                 TentRoofPath()
-                    .fill(Color.black)
+                    .fill(color)
                     .frame(width: size, height: size)
                     .offset(x: offsetX, y: offsetY)
 
-                // Door opening (cut-out in white)
+                // Door opening (cut-out)
                 TentDoorPath()
-                    .fill(Color.white)
+                    .fill(backgroundColor)
                     .frame(width: size, height: size)
                     .offset(x: offsetX, y: offsetY)
 
                 // Ground line
                 TentGroundPath()
-                    .fill(Color.black)
+                    .fill(color)
                     .frame(width: size, height: size)
                     .offset(x: offsetX, y: offsetY)
             }
@@ -637,16 +642,19 @@ public struct NatoPinIconView: View {
                 Image(systemName: "flag.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .intelligence:
                 Image(systemName: "eye.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .surveillance:
                 Image(systemName: "sensor.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .artillery:
                 MilitaryTechIcon()
@@ -656,25 +664,26 @@ public struct NatoPinIconView: View {
                 Image(systemName: "anchor.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .droneObserved:
                 DronePinIcon()
                     .fill(color)
 
             case .op:
-                ZStack {
-                    TentIcon()
-                }
+                TentIcon(color: color)
 
             case .photo:
                 Image(systemName: "camera.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .form7S:
                 Image(systemName: "doc.fill")
                     .resizable()
                     .scaledToFit()
+                    .foregroundColor(color)
 
             case .formIFS:
                 IFSMissileIcon()
@@ -682,7 +691,6 @@ public struct NatoPinIconView: View {
             }
         }
         .frame(width: size, height: size)
-        .foregroundColor(color)
     }
 }
 
@@ -833,9 +841,11 @@ public class PinMarkerImageCache {
             let iconColor = markerColor(for: pinType)
 
             if let sfSymbol = sfSymbolName(for: pinType) {
-                // Use SF Symbol
-                let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
-                if let symbolImage = UIImage(systemName: sfSymbol, withConfiguration: config)?.withTintColor(iconColor, renderingMode: .alwaysOriginal) {
+                // Use SF Symbol with palette colors for reliable tinting
+                let sizeConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+                let colorConfig = UIImage.SymbolConfiguration(paletteColors: [iconColor])
+                let config = sizeConfig.applying(colorConfig)
+                if let symbolImage = UIImage(systemName: sfSymbol, withConfiguration: config) {
                     let symbolSize = symbolImage.size
                     let x = (size.width - symbolSize.width) / 2
                     let y = (size.height - symbolSize.height) / 2

@@ -8,7 +8,6 @@ public struct OrdersListScreen: View {
 
     @State private var selectedTab = 0
     @State private var selectedOrder: Order?
-    @State private var showingOrderDetail = false
     @State private var showingCreateOBO = false
     @State private var showingCreateFiveP = false
 
@@ -67,10 +66,8 @@ public struct OrdersListScreen: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingOrderDetail) {
-                if let order = selectedOrder {
-                    OrderDetailScreen(order: order)
-                }
+            .sheet(item: $selectedOrder) { order in
+                OrderDetailScreen(order: order)
             }
             .sheet(isPresented: $showingCreateOBO) {
                 CreateOBOOrderScreen()
@@ -124,13 +121,11 @@ public struct OrdersListScreen: View {
                     recipientStatuses: ordersVM.getRecipientStatuses(forOrder: order.id)
                 )
                 .onTapGesture {
-                    selectedOrder = order
-                    showingOrderDetail = true
-
                     // Mark as read when opening
                     if order.direction == .incoming && !order.isRead {
                         ordersVM.markAsRead(order)
                     }
+                    selectedOrder = order
                 }
             }
         }
