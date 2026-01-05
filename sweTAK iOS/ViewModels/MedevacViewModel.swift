@@ -20,6 +20,13 @@ public final class MedevacViewModel: ObservableObject {
     @Published public private(set) var recipientStatuses: [MedevacRecipientStatus] = []
     @Published public private(set) var unreadIncomingCount: Int = 0
 
+    // MARK: - Incoming Notification
+
+    private let incomingNotificationSubject = PassthroughSubject<MedevacReport, Never>()
+    public var incomingNotification: AnyPublisher<MedevacReport, Never> {
+        incomingNotificationSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - UserDefaults Keys
 
     private enum Keys {
@@ -146,6 +153,9 @@ public final class MedevacViewModel: ObservableObject {
         reports.append(incomingReport)
         saveReports()
         updateUnreadCount()
+
+        // Emit notification for UI banner
+        incomingNotificationSubject.send(incomingReport)
 
         // Send delivery ACK
         sendAck(reportId: incomingReport.id, toDeviceId: incomingReport.senderDeviceId, ackType: .delivered)

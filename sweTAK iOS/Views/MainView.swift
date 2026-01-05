@@ -8,6 +8,9 @@ public struct MainView: View {
     @ObservedObject private var mapVM = MapViewModel.shared
     @ObservedObject private var chatVM = ChatViewModel.shared
     @ObservedObject private var ordersVM = OrdersViewModel.shared
+    @ObservedObject private var reportsVM = ReportsViewModel.shared
+    @ObservedObject private var medevacVM = MedevacViewModel.shared
+    @ObservedObject private var methaneVM = MethaneViewModel.shared
     @ObservedObject private var settingsVM = SettingsViewModel.shared
     @ObservedObject private var locationManager = LocationManager.shared
     @ObservedObject private var pinsVM = PinsViewModel.shared
@@ -73,6 +76,12 @@ public struct MainView: View {
     // Share sheet for saving photos
     @State private var shareSheetImage: UIImage? = nil
     @State private var showingShareSheet = false
+
+    // Notification banner state
+    @State private var incomingReport: Report? = nil
+    @State private var incomingMedevac: MedevacReport? = nil
+    @State private var incomingMethane: MethaneRequest? = nil
+    @State private var incomingOrder: Order? = nil
 
     public init() {}
 
@@ -225,6 +234,9 @@ public struct MainView: View {
                 .padding(.leading, sidePadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            // Notification banners overlay
+            notificationBannersOverlay
         }
         .ignoresSafeArea(edges: .all)
         .onAppear {
@@ -441,6 +453,40 @@ public struct MainView: View {
         .sheet(isPresented: $showingShareSheet) {
             if let image = shareSheetImage {
                 ShareSheet(items: [image])
+            }
+        }
+        // Listen for incoming notifications
+        .onReceive(reportsVM.incomingNotification) { report in
+            incomingReport = report
+            // Auto-dismiss after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                if incomingReport?.id == report.id {
+                    withAnimation { incomingReport = nil }
+                }
+            }
+        }
+        .onReceive(medevacVM.incomingNotification) { medevac in
+            incomingMedevac = medevac
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                if incomingMedevac?.id == medevac.id {
+                    withAnimation { incomingMedevac = nil }
+                }
+            }
+        }
+        .onReceive(methaneVM.incomingNotification) { methane in
+            incomingMethane = methane
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                if incomingMethane?.id == methane.id {
+                    withAnimation { incomingMethane = nil }
+                }
+            }
+        }
+        .onReceive(ordersVM.incomingNotification) { order in
+            incomingOrder = order
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                if incomingOrder?.id == order.id {
+                    withAnimation { incomingOrder = nil }
+                }
             }
         }
     }
@@ -1290,6 +1336,81 @@ public struct MainView: View {
 
             Spacer()
         }
+    }
+
+    // MARK: - Notification Banners Overlay
+
+    private var notificationBannersOverlay: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 8) {
+                // METHANE emergency banner (highest priority - red)
+                if let methane = incomingMethane {
+                    MethaneNotificationBanner(
+                        request: methane,
+                        onClick: {
+                            withAnimation { incomingMethane = nil }
+                            showingListRequests = true
+                        },
+                        onDismiss: {
+                            withAnimation { incomingMethane = nil }
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // MEDEVAC banner (high priority - color by priority)
+                if let medevac = incomingMedevac {
+                    MedevacNotificationBanner(
+                        report: medevac,
+                        onClick: {
+                            withAnimation { incomingMedevac = nil }
+                            showingListReports = true
+                        },
+                        onDismiss: {
+                            withAnimation { incomingMedevac = nil }
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // Order banner
+                if let order = incomingOrder {
+                    OrderNotificationBanner(
+                        order: order,
+                        onClick: {
+                            withAnimation { incomingOrder = nil }
+                            showingOrders = true
+                        },
+                        onDismiss: {
+                            withAnimation { incomingOrder = nil }
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // PEDARS report banner
+                if let report = incomingReport {
+                    ReportNotificationBanner(
+                        report: report,
+                        onClick: {
+                            withAnimation { incomingReport = nil }
+                            showingListReports = true
+                        },
+                        onDismiss: {
+                            withAnimation { incomingReport = nil }
+                        }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, geometry.safeAreaInsets.top + 100)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingMethane?.id)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingMedevac?.id)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingOrder?.id)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingReport?.id)
+        }
+        .allowsHitTesting(incomingMethane != nil || incomingMedevac != nil || incomingOrder != nil || incomingReport != nil)
     }
 
     // MARK: - Long-Press Context Menu Overlay

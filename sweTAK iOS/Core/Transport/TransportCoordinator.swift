@@ -348,17 +348,30 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send report
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendReport(_ report: Report) {
-        let encoder = JSONEncoder()
-        guard let reportData = try? encoder.encode(report),
-              let reportDict = try? JSONSerialization.jsonObject(with: reportData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "reportId": report.id,
+            "fromDeviceId": report.senderDeviceId,
+            "fromCallsign": report.senderCallsign,
+            "toDeviceIds": report.recipientDeviceIds,
+            "createdAtMillis": report.createdAtMillis,
+            "woundedCount": report.woundedCount,
+            "deadCount": report.deadCount,
+            "capableCount": report.capableCount,
+            "replenishment": report.replenishment,
+            "fuel": report.fuel,
+            "ammunition": report.ammunition,
+            "equipment": report.equipment,
+            "readiness": report.readiness.rawValue,
+            "readinessDetails": report.readinessDetails
+        ]
 
         let message = NetworkMessage(
             type: .report,
             deviceId: deviceId,
-            payload: reportDict
+            payload: payload
         )
 
         sendMessage(message, to: report.recipientDeviceIds)
@@ -384,17 +397,47 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send METHANE request
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendMethane(_ methane: MethaneRequest) {
-        let encoder = JSONEncoder()
-        guard let methaneData = try? encoder.encode(methane),
-              let methaneDict = try? JSONSerialization.jsonObject(with: methaneData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "methaneId": methane.id,
+            "fromDeviceId": methane.senderDeviceId,
+            "fromCallsign": methane.senderCallsign,
+            "toDeviceIds": methane.recipientDeviceIds,
+            "createdAtMillis": methane.createdAtMillis,
+            // M - Military (callsign and unit)
+            "callsign": methane.callsign,
+            "unit": methane.unit,
+            // E - Exact location
+            "exactLocation": methane.incidentLocation,
+            "exactLocationLat": methane.incidentLatitude as Any,
+            "exactLocationLon": methane.incidentLongitude as Any,
+            // T - Time and type
+            "incidentType": methane.incidentType,
+            "incidentTime": methane.incidentTime,
+            // H - Hazards
+            "hazards": methane.hazards,
+            // A - Access routes and HLS
+            "accessRoutes": methane.approachRoutes,
+            "hlsLocation": methane.hlsLocation,
+            "accessRouteLat": methane.hlsLatitude as Any,
+            "accessRouteLon": methane.hlsLongitude as Any,
+            // N - Numbers (casualties)
+            "casualtiesP1": methane.casualtyCountP1,
+            "casualtiesP2": methane.casualtyCountP2,
+            "casualtiesP3": methane.casualtyCountP3,
+            "casualtiesDead": methane.casualtyCountDeceased,
+            "casualtyDetails": methane.casualtyDetails,
+            // E - Emergency services (assets)
+            "assetsPresent": methane.assetsPresent,
+            "assetsRequired": methane.assetsRequired
+        ]
 
         let message = NetworkMessage(
             type: .methane,
             deviceId: deviceId,
-            payload: methaneDict
+            payload: payload
         )
 
         sendMessage(message, to: methane.recipientDeviceIds)
@@ -420,17 +463,33 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send MEDEVAC report
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendMedevac(_ medevac: MedevacReport) {
-        let encoder = JSONEncoder()
-        guard let medevacData = try? encoder.encode(medevac),
-              let medevacDict = try? JSONSerialization.jsonObject(with: medevacData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "reportId": medevac.id,
+            "fromDeviceId": medevac.senderDeviceId,
+            "fromCallsign": medevac.senderCallsign,
+            "toDeviceIds": medevac.recipientDeviceIds,
+            "createdAtMillis": medevac.createdAtMillis,
+            "soldierName": medevac.soldierName,
+            "priority": medevac.priority.rawValue,
+            "ageInfo": medevac.ageInfo,
+            "incidentTime": medevac.incidentTime,
+            "mechanismOfInjury": medevac.mechanismOfInjury,
+            "injuryDescription": medevac.injuryDescription,
+            "signsSymptoms": medevac.signsSymptoms,
+            "pulse": medevac.pulse,
+            "bodyTemperature": medevac.bodyTemperature,
+            "treatmentActions": medevac.treatmentActions,
+            "medicinesGiven": medevac.medicinesGiven,
+            "caretakerName": medevac.caretakerName
+        ]
 
         let message = NetworkMessage(
             type: .medevac,
             deviceId: deviceId,
-            payload: medevacDict
+            payload: payload
         )
 
         sendMessage(message, to: medevac.recipientDeviceIds)
