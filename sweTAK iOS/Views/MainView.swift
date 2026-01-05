@@ -78,10 +78,10 @@ public struct MainView: View {
     @State private var showingShareSheet = false
 
     // Notification banner state
-    @State private var incomingReport: Report? = nil
-    @State private var incomingMedevac: MedevacReport? = nil
-    @State private var incomingMethane: MethaneRequest? = nil
-    @State private var incomingOrder: Order? = nil
+    @State private var pendingReports: [Report] = []
+    @State private var pendingMedevacs: [MedevacReport] = []
+    @State private var pendingMethanes: [MethaneRequest] = []
+    @State private var pendingOrders: [Order] = []
 
     public init() {}
 
@@ -455,38 +455,26 @@ public struct MainView: View {
                 ShareSheet(items: [image])
             }
         }
-        // Listen for incoming notifications
+        // Listen for incoming notifications - sticky (no auto-dismiss)
         .onReceive(reportsVM.incomingNotification) { report in
-            incomingReport = report
-            // Auto-dismiss after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if incomingReport?.id == report.id {
-                    withAnimation { incomingReport = nil }
-                }
+            // Avoid duplicates
+            if !pendingReports.contains(where: { $0.id == report.id }) {
+                withAnimation { pendingReports.append(report) }
             }
         }
         .onReceive(medevacVM.incomingNotification) { medevac in
-            incomingMedevac = medevac
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if incomingMedevac?.id == medevac.id {
-                    withAnimation { incomingMedevac = nil }
-                }
+            if !pendingMedevacs.contains(where: { $0.id == medevac.id }) {
+                withAnimation { pendingMedevacs.append(medevac) }
             }
         }
         .onReceive(methaneVM.incomingNotification) { methane in
-            incomingMethane = methane
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if incomingMethane?.id == methane.id {
-                    withAnimation { incomingMethane = nil }
-                }
+            if !pendingMethanes.contains(where: { $0.id == methane.id }) {
+                withAnimation { pendingMethanes.append(methane) }
             }
         }
         .onReceive(ordersVM.incomingNotification) { order in
-            incomingOrder = order
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                if incomingOrder?.id == order.id {
-                    withAnimation { incomingOrder = nil }
-                }
+            if !pendingOrders.contains(where: { $0.id == order.id }) {
+                withAnimation { pendingOrders.append(order) }
             }
         }
     }
@@ -1340,77 +1328,102 @@ public struct MainView: View {
 
     // MARK: - Notification Banners Overlay
 
+    private var hasPendingNotifications: Bool {
+        !pendingMethanes.isEmpty || !pendingMedevacs.isEmpty || !pendingOrders.isEmpty || !pendingReports.isEmpty
+    }
+
+    private func dismissMethane(_ id: String) {
+        withAnimation { pendingMethanes.removeAll { $0.id == id } }
+    }
+
+    private func dismissMedevac(_ id: String) {
+        withAnimation { pendingMedevacs.removeAll { $0.id == id } }
+    }
+
+    private func dismissOrder(_ id: String) {
+        withAnimation { pendingOrders.removeAll { $0.id == id } }
+    }
+
+    private func dismissReport(_ id: String) {
+        withAnimation { pendingReports.removeAll { $0.id == id } }
+    }
+
+    @ViewBuilder
+    private var methaneBanners: some View {
+        ForEach(pendingMethanes) { methane in
+            MethaneNotificationBanner(
+                request: methane,
+                onClick: {
+                    dismissMethane(methane.id)
+                    showingListRequests = true
+                },
+                onDismiss: { dismissMethane(methane.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var medevacBanners: some View {
+        ForEach(pendingMedevacs) { medevac in
+            MedevacNotificationBanner(
+                report: medevac,
+                onClick: {
+                    dismissMedevac(medevac.id)
+                    showingListReports = true
+                },
+                onDismiss: { dismissMedevac(medevac.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var orderBanners: some View {
+        ForEach(pendingOrders) { order in
+            OrderNotificationBanner(
+                order: order,
+                onClick: {
+                    dismissOrder(order.id)
+                    showingOrders = true
+                },
+                onDismiss: { dismissOrder(order.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var reportBanners: some View {
+        ForEach(pendingReports) { report in
+            ReportNotificationBanner(
+                report: report,
+                onClick: {
+                    dismissReport(report.id)
+                    showingListReports = true
+                },
+                onDismiss: { dismissReport(report.id) }
+            )
+        }
+    }
+
     private var notificationBannersOverlay: some View {
         GeometryReader { geometry in
-            VStack(spacing: 8) {
-                // METHANE emergency banner (highest priority - red)
-                if let methane = incomingMethane {
-                    MethaneNotificationBanner(
-                        request: methane,
-                        onClick: {
-                            withAnimation { incomingMethane = nil }
-                            showingListRequests = true
-                        },
-                        onDismiss: {
-                            withAnimation { incomingMethane = nil }
-                        }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            ScrollView {
+                VStack(spacing: 8) {
+                    methaneBanners
+                    medevacBanners
+                    orderBanners
+                    reportBanners
                 }
-
-                // MEDEVAC banner (high priority - color by priority)
-                if let medevac = incomingMedevac {
-                    MedevacNotificationBanner(
-                        report: medevac,
-                        onClick: {
-                            withAnimation { incomingMedevac = nil }
-                            showingListReports = true
-                        },
-                        onDismiss: {
-                            withAnimation { incomingMedevac = nil }
-                        }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                // Order banner
-                if let order = incomingOrder {
-                    OrderNotificationBanner(
-                        order: order,
-                        onClick: {
-                            withAnimation { incomingOrder = nil }
-                            showingOrders = true
-                        },
-                        onDismiss: {
-                            withAnimation { incomingOrder = nil }
-                        }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                // PEDARS report banner
-                if let report = incomingReport {
-                    ReportNotificationBanner(
-                        report: report,
-                        onClick: {
-                            withAnimation { incomingReport = nil }
-                            showingListReports = true
-                        },
-                        onDismiss: {
-                            withAnimation { incomingReport = nil }
-                        }
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 16)
+            .frame(maxHeight: geometry.size.height * 0.6)
             .padding(.top, geometry.safeAreaInsets.top + 100)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingMethane?.id)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingMedevac?.id)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingOrder?.id)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: incomingReport?.id)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMethanes.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMedevacs.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingOrders.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingReports.count)
         }
-        .allowsHitTesting(incomingMethane != nil || incomingMedevac != nil || incomingOrder != nil || incomingReport != nil)
+        .allowsHitTesting(hasPendingNotifications)
     }
 
     // MARK: - Long-Press Context Menu Overlay
