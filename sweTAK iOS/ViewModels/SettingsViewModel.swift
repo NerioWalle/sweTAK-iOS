@@ -33,6 +33,29 @@ public enum SettingsMapStyle: String, Codable, CaseIterable {
     public var displayName: String { rawValue }
 }
 
+/// Appearance mode options
+public enum AppearanceMode: String, Codable, CaseIterable {
+    case system = "System"
+    case dark = "Dark"
+    case light = "Light"
+
+    public var displayName: String {
+        switch self {
+        case .system: return "System setting"
+        case .dark: return "Dark mode"
+        case .light: return "Light mode"
+        }
+    }
+
+    public var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .dark: return .dark
+        case .light: return .light
+        }
+    }
+}
+
 /// GPS interval settings
 public struct GPSInterval: Codable, Equatable {
     public var value: Int
@@ -57,7 +80,7 @@ public struct GPSInterval: Codable, Equatable {
 
 /// Settings state model
 public struct SettingsState: Codable, Equatable {
-    public var isDarkMode: Bool = false
+    public var appearanceMode: AppearanceMode = .system
     public var unitSystem: SettingsUnitSystem = .metric
     public var coordFormat: CoordinateFormat = .mgrs
     public var gpsInterval: GPSInterval = GPSInterval()
@@ -337,9 +360,9 @@ public final class SettingsViewModel: ObservableObject {
 
     // MARK: - Display Settings
 
-    /// Set dark mode
-    public func setDarkMode(_ isDark: Bool) {
-        settings.isDarkMode = isDark
+    /// Set appearance mode
+    public func setAppearanceMode(_ mode: AppearanceMode) {
+        settings.appearanceMode = mode
         saveSettings()
     }
 

@@ -89,7 +89,7 @@ public enum MapStyle: String, CaseIterable, Codable {
 
     public var displayName: String {
         switch self {
-        case .standard: return "Standard"
+        case .standard: return "Street"
         case .satellite: return "Satellite"
         case .hybrid: return "Hybrid"
         case .terrain: return "Terrain"

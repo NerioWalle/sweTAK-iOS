@@ -67,10 +67,14 @@ public struct SettingsScreen: View {
 
     private var appearanceSection: some View {
         Section("Appearance") {
-            Toggle("Dark Mode", isOn: Binding(
-                get: { settingsVM.settings.isDarkMode },
-                set: { settingsVM.setDarkMode($0) }
-            ))
+            Picker("Theme", selection: Binding(
+                get: { settingsVM.settings.appearanceMode },
+                set: { settingsVM.setAppearanceMode($0) }
+            )) {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
         }
     }
 
@@ -148,7 +152,7 @@ public struct SettingsScreen: View {
                 get: { settingsVM.settings.unitSystem },
                 set: { settingsVM.setUnitSystem($0) }
             )) {
-                ForEach(UnitSystem.allCases, id: \.self) { unit in
+                ForEach(SettingsUnitSystem.allCases, id: \.self) { unit in
                     Text(unit.displayName).tag(unit)
                 }
             }
@@ -169,7 +173,7 @@ public struct SettingsScreen: View {
 
     private var transportSection: some View {
         Section {
-            Picker("Transport Mode", selection: Binding(
+            Picker("", selection: Binding(
                 get: { settingsVM.transportMode },
                 set: { settingsVM.setTransportMode($0) }
             )) {
@@ -177,6 +181,7 @@ public struct SettingsScreen: View {
                 Text("Internet (MQTT)").tag(TransportMode.mqtt)
             }
             .pickerStyle(.inline)
+            .labelsHidden()
 
             // Connection status
             HStack {
@@ -677,7 +682,7 @@ struct ProfileEditView: View {
             // Organization
             Section("Organization") {
                 TextField("Company", text: $editableProfile.company)
-                TextField("Platoon", text: $editableProfile.platoon)
+                TextField("Platoon/Troop", text: $editableProfile.platoon)
                 TextField("Squad", text: $editableProfile.squad)
             }
 

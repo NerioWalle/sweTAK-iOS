@@ -115,9 +115,13 @@ public final class ChatViewModel: ObservableObject {
         uiState = ChatUIState()
     }
 
-    /// Get all thread IDs
+    /// Get all thread IDs sorted by latest message (most recent first)
     public var allThreadIds: [String] {
-        Array(threads.keys).sorted()
+        Array(threads.keys).sorted { threadA, threadB in
+            let lastTimestampA = threads[threadA]?.last?.timestampMillis ?? 0
+            let lastTimestampB = threads[threadB]?.last?.timestampMillis ?? 0
+            return lastTimestampA > lastTimestampB
+        }
     }
 
     /// Get messages for a thread

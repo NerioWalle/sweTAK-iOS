@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import MapKit
 
 /// Screen for creating and sending a METHANE emergency notification request.
 /// METHANE: Major incident, Exact location, Type of incident, Hazards,
@@ -48,6 +49,15 @@ public struct CreateMethaneScreen: View {
     // Recipients
     @State private var selectedRecipientIds: Set<String> = []
     @State private var showingRecipientPicker = false
+
+    // Location picker
+    @State private var showingLocationPicker = false
+    @State private var pickingLocationFor: LocationPickerTarget = .incident
+
+    private enum LocationPickerTarget {
+        case incident
+        case hls
+    }
 
     // Validation
     private var isValid: Bool {
@@ -162,9 +172,10 @@ public struct CreateMethaneScreen: View {
                 HStack {
                     TextField("Coordinates", text: $incidentCoordinates)
                     Button {
-                        useCurrentLocation()
+                        pickingLocationFor = .incident
+                        showingLocationPicker = true
                     } label: {
-                        Image(systemName: "location.fill")
+                        Image(systemName: "map")
                     }
                 }
             } header: {
@@ -200,9 +211,10 @@ public struct CreateMethaneScreen: View {
                 HStack {
                     TextField("HLS Coordinates", text: $hlsCoordinates)
                     Button {
-                        useCurrentLocationForHLS()
+                        pickingLocationFor = .hls
+                        showingLocationPicker = true
                     } label: {
-                        Image(systemName: "location.fill")
+                        Image(systemName: "map")
                     }
                 }
             } header: {
@@ -281,6 +293,31 @@ public struct CreateMethaneScreen: View {
                 .disabled(!isValid)
             }
         }
+        .sheet(isPresented: $showingLocationPicker) {
+            LocationPickerSheet(
+                initialCoordinate: getInitialCoordinate(),
+                onSelect: { coordinate in
+                    let coordString = String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)
+                    switch pickingLocationFor {
+                    case .incident:
+                        incidentCoordinates = coordString
+                    case .hls:
+                        hlsCoordinates = coordString
+                    }
+                }
+            )
+        }
+    }
+
+    private func getInitialCoordinate() -> CLLocationCoordinate2D? {
+        // Try to parse existing coordinates for the target field
+        let coordString = pickingLocationFor == .incident ? incidentCoordinates : hlsCoordinates
+        let (lat, lon) = parseCoordinates(coordString)
+        if let lat = lat, let lon = lon {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+        // Fall back to current location
+        return locationManager.currentLocation?.coordinate
     }
 
     // MARK: - Recipient Picker
@@ -344,18 +381,6 @@ public struct CreateMethaneScreen: View {
     }
 
     // MARK: - Helpers
-
-    private func useCurrentLocation() {
-        if let location = locationManager.currentLocation {
-            incidentCoordinates = String(format: "%.6f, %.6f", location.coordinate.latitude, location.coordinate.longitude)
-        }
-    }
-
-    private func useCurrentLocationForHLS() {
-        if let location = locationManager.currentLocation {
-            hlsCoordinates = String(format: "%.6f, %.6f", location.coordinate.latitude, location.coordinate.longitude)
-        }
-    }
 
     private func parseCoordinates(_ input: String) -> (Double?, Double?) {
         let trimmed = input.trimmingCharacters(in: .whitespaces)
@@ -427,6 +452,120 @@ private struct MethaneSectionHeader: View {
                 .foregroundColor(.blue)
             Text(title)
                 .foregroundColor(.blue)
+        }
+    }
+}
+
+// MARK: - Location Picker Sheet
+
+private struct LocationPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var locationManager = LocationManager.shared
+
+    let initialCoordinate: CLLocationCoordinate2D?
+    let onSelect: (CLLocationCoordinate2D) -> Void
+
+    @State private var selectedCoordinate: CLLocationCoordinate2D?
+    @State private var cameraPosition: MapCameraPosition = .automatic
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Map(position: $cameraPosition, interactionModes: [.pan, .zoom]) {
+                    // Show selected location marker
+                    if let coord = selectedCoordinate {
+                        Annotation("Selected", coordinate: coord) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title)
+                                .foregroundColor(.red)
+                        }
+                    }
+
+                    // Show user location
+                    UserAnnotation()
+                }
+                .onTapGesture { position in
+                    // This doesn't give us the coordinate directly, we need a workaround
+                }
+                .gesture(
+                    SpatialTapGesture()
+                        .onEnded { _ in
+                            // We'll use a different approach - center crosshair
+                        }
+                )
+
+                // Center crosshair for selection
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Image(systemName: "plus")
+                            .font(.title)
+                            .foregroundColor(.red)
+                            .shadow(color: .white, radius: 2)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
+
+                // Coordinate display at bottom
+                VStack {
+                    Spacer()
+                    if let coord = selectedCoordinate {
+                        Text(String(format: "%.6f, %.6f", coord.latitude, coord.longitude))
+                            .font(.caption)
+                            .padding(8)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(8)
+                            .padding(.bottom, 20)
+                    }
+                }
+            }
+            .navigationTitle("Pick Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Select") {
+                        if let coord = selectedCoordinate {
+                            onSelect(coord)
+                        }
+                        dismiss()
+                    }
+                    .disabled(selectedCoordinate == nil)
+                }
+            }
+            .onAppear {
+                setupInitialPosition()
+            }
+            .onMapCameraChange { context in
+                // Update selected coordinate to map center
+                selectedCoordinate = context.region.center
+            }
+        }
+    }
+
+    private func setupInitialPosition() {
+        if let initial = initialCoordinate {
+            selectedCoordinate = initial
+            cameraPosition = .region(MKCoordinateRegion(
+                center: initial,
+                latitudinalMeters: 1000,
+                longitudinalMeters: 1000
+            ))
+        } else if let location = locationManager.currentLocation {
+            selectedCoordinate = location.coordinate
+            cameraPosition = .region(MKCoordinateRegion(
+                center: location.coordinate,
+                latitudinalMeters: 1000,
+                longitudinalMeters: 1000
+            ))
         }
     }
 }

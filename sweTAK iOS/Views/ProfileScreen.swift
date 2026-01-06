@@ -74,14 +74,14 @@ public struct ProfileScreen: View {
                 // Unit info section
                 Section("Unit Information") {
                     ProfileTextField(
-                        title: "Unit / Company",
+                        title: "Company",
                         text: $company,
                         placeholder: "e.g., 1st Company"
                     )
                     .focused($focusedField, equals: .company)
 
                     ProfileTextField(
-                        title: "Platoon",
+                        title: "Platoon/Troop",
                         text: $platoon,
                         placeholder: "e.g., 2nd Platoon"
                     )

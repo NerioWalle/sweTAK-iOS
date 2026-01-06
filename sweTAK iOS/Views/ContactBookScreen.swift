@@ -361,7 +361,7 @@ private struct ContactDetailSheet: View {
                         DetailRow(label: "Company", value: company)
                     }
                     if let platoon = contact.platoon {
-                        DetailRow(label: "Platoon", value: platoon)
+                        DetailRow(label: "Platoon/Troop", value: platoon)
                     }
                     if let squad = contact.squad {
                         DetailRow(label: "Squad", value: squad)

@@ -50,10 +50,7 @@ public struct sweTAKApp: App {
     }
 
     private var colorScheme: ColorScheme? {
-        if SettingsViewModel.shared.settings.isDarkMode {
-            return .dark
-        }
-        return nil
+        SettingsViewModel.shared.settings.appearanceMode.colorScheme
     }
 
     public init() {}
