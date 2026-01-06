@@ -151,7 +151,14 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         _connectionState = .connecting
 
         // Create MQTT 3.1.1 client (most universally supported)
-        let clientId = config.clientId.isEmpty ? "swetak-ios-\(UUID().uuidString.prefix(8))" : config.clientId
+        // ALWAYS use persistent client ID based on device ID for session persistence
+        // This ensures the broker recognizes us across app restarts and delivers queued messages
+        let deviceId = SettingsViewModel.shared.deviceId
+        let clientId = "swetak-ios-\(deviceId)"
+
+        logger.info("🔑 MQTT Client ID: \(clientId)")
+        logger.info("📱 Device ID from settings: \(deviceId)")
+        logger.info("🔄 cleanSession will be set to FALSE for persistent sessions")
 
         let mqttClient = CocoaMQTT(clientID: clientId, host: config.host, port: UInt16(config.port))
 
@@ -161,7 +168,8 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         mqttClient.keepAlive = 60
         mqttClient.autoReconnect = true
         mqttClient.autoReconnectTimeInterval = 5
-        mqttClient.cleanSession = true
+        // cleanSession = false to receive messages queued while offline (QoS 1/2)
+        mqttClient.cleanSession = false
 
         // TLS configuration
         mqttClient.enableSSL = config.useTLS
@@ -396,10 +404,15 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
         // Check message age for replay protection
         if let timestamp = json["ts"] as? Int64 ?? json["createdAtMillis"] as? Int64 ?? json["timestamp"] as? Int64 {
+            let ageMillis = Date.currentMillis - timestamp
+            let ageMinutes = ageMillis / 60000
+            logger.info("Message age: \(ageMinutes) min (max allowed: \(self.maxMessageAgeMinutes) min)")
             if isMessageTooOld(timestamp) {
-                logger.debug("Ignoring old message (age > \(self.maxMessageAgeMinutes) min)")
+                logger.warning("⚠️ Ignoring old message (age \(ageMinutes) min > \(self.maxMessageAgeMinutes) min)")
                 return
             }
+        } else {
+            logger.info("Message has no timestamp, accepting")
         }
 
         // Route to appropriate handler based on topic/type
@@ -979,9 +992,11 @@ extension MQTTClientManager: CocoaMQTTDelegate {
 
     public func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
         logger.info("Connected with ack: \(String(describing: ack), privacy: .public)")
+        logger.info("MQTT Session Info - clientID: \(mqtt.clientID), cleanSession: \(mqtt.cleanSession)")
 
         if ack == .accept {
             _connectionState = .connected
+            logger.info("Connection accepted, subscribing to topics. Any queued messages should arrive soon...")
             subscribeToAllTopics()
         } else {
             let errorMsg: String
@@ -1015,6 +1030,8 @@ extension MQTTClientManager: CocoaMQTTDelegate {
         let topic = message.topic
         let payload = message.payload
 
+        logger.info("📩 MQTT Message received - topic: \(topic), msgId: \(id), payloadSize: \(payload.count) bytes")
+
         handleMessage(topic: topic, payload: Data(payload))
     }
 
@@ -1041,9 +1058,10 @@ extension MQTTClientManager: CocoaMQTTDelegate {
         if let error = err {
             let errorMsg = error.localizedDescription
             logger.error("Disconnected with error: \(errorMsg, privacy: .public)")
+            logger.info("Session should persist on broker (cleanSession=false) for client: \(mqtt.clientID)")
             _connectionState = .error(errorMsg)
         } else {
-            logger.info("Disconnected normally")
+            logger.info("Disconnected normally - session should persist on broker for client: \(mqtt.clientID)")
             _connectionState = .disconnected
         }
     }
