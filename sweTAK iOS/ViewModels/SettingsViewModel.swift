@@ -112,6 +112,26 @@ public enum MapTilerStyle: String {
     case topographic = "topo-v2"
 }
 
+/// Map provider options
+public enum MapProvider: String, Codable, CaseIterable {
+    case appleMaps = "apple"
+    case mapTiler = "maptiler"
+
+    public var displayName: String {
+        switch self {
+        case .appleMaps: return "Apple Maps"
+        case .mapTiler: return "MapTiler"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .appleMaps: return "apple.logo"
+        case .mapTiler: return "map"
+        }
+    }
+}
+
 /// ViewModel for managing app settings
 /// Mirrors Android SettingsViewModel functionality
 public final class SettingsViewModel: ObservableObject {
@@ -130,6 +150,7 @@ public final class SettingsViewModel: ObservableObject {
     @Published public private(set) var transportMode: TransportMode = .localUDP
     @Published public private(set) var mqttSettings = MQTTSettings()
     @Published public private(set) var mapTilerSettings = MapTilerSettings()
+    @Published public private(set) var mapProvider: MapProvider = .appleMaps
     @Published public private(set) var profile = LocalProfile()
 
     // MARK: - Lighting State
@@ -166,6 +187,7 @@ public final class SettingsViewModel: ObservableObject {
         static let transportMode = "swetak_transport_mode"
         static let mqttSettings = "swetak_mqtt_settings"
         static let mapTilerSettings = "swetak_maptiler_settings"
+        static let mapProvider = "swetak_map_provider"
         static let profile = "swetak_profile"
         static let deviceId = "swetak_device_id"
     }
@@ -219,6 +241,12 @@ public final class SettingsViewModel: ObservableObject {
             mapTilerSettings = stored
         }
 
+        // Load map provider
+        if let storedProvider = UserDefaults.standard.string(forKey: Keys.mapProvider),
+           let provider = MapProvider(rawValue: storedProvider) {
+            mapProvider = provider
+        }
+
         // Load profile
         if let data = UserDefaults.standard.data(forKey: Keys.profile),
            let stored = try? JSONDecoder().decode(LocalProfile.self, from: data) {
@@ -248,6 +276,10 @@ public final class SettingsViewModel: ObservableObject {
         if let data = try? JSONEncoder().encode(mapTilerSettings) {
             UserDefaults.standard.set(data, forKey: Keys.mapTilerSettings)
         }
+    }
+
+    private func saveMapProvider() {
+        UserDefaults.standard.set(mapProvider.rawValue, forKey: Keys.mapProvider)
     }
 
     private func saveProfile() {
@@ -440,6 +472,13 @@ public final class SettingsViewModel: ObservableObject {
         logger.info("MapTiler API key updated")
     }
 
+    /// Set map provider
+    public func setMapProvider(_ provider: MapProvider) {
+        mapProvider = provider
+        saveMapProvider()
+        logger.info("Map provider set to: \(provider.displayName)")
+    }
+
     /// Get the MapTiler style URL for a given map style
     public func mapTilerURL(for style: MapStyle) -> String? {
         guard mapTilerSettings.isValid else { return nil }
@@ -449,7 +488,7 @@ public final class SettingsViewModel: ObservableObject {
         case .standard:
             tilerStyle = .streets
         case .satellite:
-            return nil // Use Apple's satellite
+            tilerStyle = .satellite
         case .hybrid:
             tilerStyle = .hybrid
         case .terrain:

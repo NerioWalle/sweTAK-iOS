@@ -113,15 +113,27 @@ public struct SettingsScreen: View {
                 }
             }
 
-            // MapTiler API Key
-            NavigationLink {
-                MapTilerSettingsView()
-            } label: {
-                HStack {
-                    Text("MapTiler Cloud")
-                    Spacer()
-                    Text(settingsVM.mapTilerSettings.isValid ? "Configured" : "Not Set")
-                        .foregroundColor(.secondary)
+            // Map provider picker
+            Picker("Map Provider", selection: Binding(
+                get: { settingsVM.mapProvider },
+                set: { settingsVM.setMapProvider($0) }
+            )) {
+                ForEach(MapProvider.allCases, id: \.self) { provider in
+                    Label(provider.displayName, systemImage: provider.icon).tag(provider)
+                }
+            }
+
+            // MapTiler API Key - only show if MapTiler is selected or configured
+            if settingsVM.mapProvider == .mapTiler || settingsVM.mapTilerSettings.isValid {
+                NavigationLink {
+                    MapTilerSettingsView()
+                } label: {
+                    HStack {
+                        Text("MapTiler Cloud")
+                        Spacer()
+                        Text(settingsVM.mapTilerSettings.isValid ? "Configured" : "Not Set")
+                            .foregroundColor(settingsVM.mapProvider == .mapTiler && !settingsVM.mapTilerSettings.isValid ? .orange : .secondary)
+                    }
                 }
             }
         }

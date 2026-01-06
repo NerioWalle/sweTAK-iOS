@@ -1775,25 +1775,48 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.wasFollowing = followMode
     }
 
+    // Track current map configuration to avoid unnecessary updates
+    private static var currentMapProvider: MapProvider?
+    private static var currentMapStyle: MapStyle?
+    private static var currentTileURL: String?
+
     private func updateMapType(_ mapView: MKMapView) {
+        let currentStyle = settingsVM.currentMapStyle
+        let mapProvider = settingsVM.mapProvider
+        let tileURLTemplate = settingsVM.mapTilerURL(for: currentStyle)
+
+        // Check if we need to update - skip if nothing changed
+        let needsMapTiler = mapProvider == .mapTiler && settingsVM.mapTilerSettings.isValid && tileURLTemplate != nil
+        let targetTileURL = needsMapTiler ? tileURLTemplate : nil
+
+        if MapViewRepresentable.currentMapProvider == mapProvider &&
+           MapViewRepresentable.currentMapStyle == currentStyle &&
+           MapViewRepresentable.currentTileURL == targetTileURL {
+            // No change needed
+            return
+        }
+
+        // Update tracking
+        MapViewRepresentable.currentMapProvider = mapProvider
+        MapViewRepresentable.currentMapStyle = currentStyle
+        MapViewRepresentable.currentTileURL = targetTileURL
+
         // Remove existing tile overlays
         let existingOverlays = mapView.overlays.filter { $0 is MKTileOverlay }
         mapView.removeOverlays(existingOverlays)
 
-        let currentStyle = settingsVM.currentMapStyle
-
-        // Check if MapTiler is configured for terrain/outdoor/topographic styles
-        if let tileURLTemplate = settingsVM.mapTilerURL(for: currentStyle) {
-            // Use MapTiler tiles
-            mapView.mapType = .standard  // Base layer
-            let tileOverlay = MKTileOverlay(urlTemplate: tileURLTemplate)
+        // Use MapTiler if selected and configured
+        if let tileURL = targetTileURL {
+            // Use MapTiler tiles - hide Apple Maps base layer
+            mapView.mapType = .mutedStandard
+            let tileOverlay = MKTileOverlay(urlTemplate: tileURL)
             tileOverlay.canReplaceMapContent = true
             tileOverlay.maximumZ = 19
             tileOverlay.minimumZ = 0
             mapView.addOverlay(tileOverlay, level: .aboveLabels)
             mapView.showsBuildings = false
         } else {
-            // Use Apple's native map types
+            // Use Apple Maps
             switch currentStyle {
             case .standard:
                 mapView.mapType = .standard
