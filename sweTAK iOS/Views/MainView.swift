@@ -309,11 +309,11 @@ public struct MainView: View {
             mapVM.updateCrosshairAltitude(elevation)
         }
         .onReceive(locationManager.$currentLocation) { location in
-            // Center map on user's position with 20km radius on first location update
+            // Center map on user's position with 5km radius on first location update
             if let location = location, !mapVM.hasCenteredInitially {
                 if let mapView = MapViewRepresentable.mapViewReference {
-                    // Calculate bounds for 20km radius (like Android implementation)
-                    let radiusMeters = 20_000.0
+                    // Calculate bounds for 5km radius
+                    let radiusMeters = 5_000.0
                     let bounds = regionForRadius(center: location.coordinate, radiusMeters: radiusMeters)
                     mapView.setRegion(bounds, animated: true)
                     mapVM.markInitiallyCentered()
@@ -692,6 +692,16 @@ public struct MainView: View {
                 // User dragged the map - disable follow mode and show crosshair
                 if mapVM.followMe {
                     mapVM.setFollowMe(false)
+                }
+            },
+            onMapReady: { mapView in
+                // Center map on user's position with 5km radius when map is ready
+                if !mapVM.hasCenteredInitially,
+                   let location = locationManager.currentLocation {
+                    let radiusMeters = 5_000.0
+                    let bounds = regionForRadius(center: location.coordinate, radiusMeters: radiusMeters)
+                    mapView.setRegion(bounds, animated: false)
+                    mapVM.markInitiallyCentered()
                 }
             }
         )
