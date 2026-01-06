@@ -61,7 +61,7 @@ public struct GPSInterval: Codable, Equatable {
     public var value: Int
     public var unit: String  // "s" for seconds, "m" for minutes
 
-    public init(value: Int = 5, unit: String = "s") {
+    public init(value: Int = 2, unit: String = "m") {
         self.value = value
         self.unit = unit
     }

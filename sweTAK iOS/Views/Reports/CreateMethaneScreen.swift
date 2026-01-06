@@ -118,15 +118,17 @@ public struct CreateMethaneScreen: View {
             return
         }
 
-        // Set default callsign from profile
+        // Set default callsign and unit from profile
         if let profile = contactsVM.myProfile {
             callsign = profile.callsign ?? ""
-            unit = profile.company ?? ""
+            // Build unit string from company.platoon.squad (e.g., "414.1.2")
+            let unitParts = [profile.company, profile.platoon, profile.squad].compactMap { $0 }.filter { !$0.isEmpty }
+            unit = unitParts.joined(separator: ".")
         }
 
-        // Set current time
+        // Set current time in military format DDHHMM
         let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
+        formatter.dateFormat = "ddHHmm"
         incidentTime = formatter.string(from: Date())
 
         // Set current location if available
@@ -168,14 +170,14 @@ public struct CreateMethaneScreen: View {
             // M - Military Details
             Section {
                 TextField("Callsign", text: $callsign)
-                TextField("Unit", text: $unit)
+                TextField("Unit (Company.Platoon.Squad)", text: $unit)
             } header: {
                 MethaneSectionHeader(letter: "M", title: "MILITARY DETAILS")
             }
 
             // E - Exact Location
             Section {
-                TextField("Location Description", text: $incidentLocation, axis: .vertical)
+                TextField("Describe your location", text: $incidentLocation, axis: .vertical)
                     .lineLimit(2...4)
 
                 HStack {
@@ -194,8 +196,8 @@ public struct CreateMethaneScreen: View {
             // T - Time and Type
             Section {
                 HStack {
-                    TextField("Time", text: $incidentTime)
-                        .frame(width: 80)
+                    TextField("DDHHMM", text: $incidentTime)
+                        .frame(width: 100)
                     TextField("Type of Incident *", text: $incidentType)
                 }
             } header: {

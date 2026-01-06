@@ -124,26 +124,28 @@ public struct CreateMedevacScreen: View {
             Section {
                 TextField("Soldier Name *", text: $soldierName)
 
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Priority")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Picker("Priority", selection: $priority) {
-                            ForEach(MedevacPriority.allCases, id: \.self) { p in
-                                Text(p.displayName)
-                                    .foregroundColor(p.color)
-                                    .tag(p)
-                            }
+                VStack(alignment: .leading) {
+                    Text("Priority")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Priority", selection: $priority) {
+                        ForEach(MedevacPriority.allCases, id: \.self) { p in
+                            Text(p.displayName)
+                                .foregroundColor(p.color)
+                                .tag(p)
                         }
-                        .pickerStyle(.menu)
                     }
-
-                    TextField("Age", text: $ageInfo)
-                        .frame(maxWidth: 100)
+                    .pickerStyle(.menu)
                 }
 
-                TextField("Time of Incident (DDHHMM)", text: $incidentTime)
+                TextField("Age", text: $ageInfo)
+
+                VStack(alignment: .leading) {
+                    Text("Time of Incident")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("DDHHMM", text: $incidentTime)
+                }
             } header: {
                 Text("PATIENT INFORMATION")
                     .foregroundColor(.blue)

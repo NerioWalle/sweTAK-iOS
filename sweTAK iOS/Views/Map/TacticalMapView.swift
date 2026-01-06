@@ -19,6 +19,10 @@ public struct TacticalMapView: View {
     @State private var showingAddPin = false
     @State private var longPressLocation: CLLocationCoordinate2D?
 
+    // Peer interaction state
+    @State private var selectedPeer: PeerPosition?
+    @State private var showingPeerDetail = false
+
     // Crosshair state
     @State private var showCrosshair = false
 
@@ -66,6 +70,11 @@ public struct TacticalMapView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingPeerDetail) {
+            if let peer = selectedPeer {
+                PeerDetailSheet(peer: peer)
+            }
+        }
     }
 
     // MARK: - Map Content
@@ -79,7 +88,10 @@ public struct TacticalMapView: View {
             // Peer positions
             ForEach(Array(mapVM.peerPositions.values)) { peer in
                 Annotation(peer.callsign, coordinate: peer.coordinate) {
-                    PeerMarkerView(peer: peer)
+                    PeerMarkerView(peer: peer) {
+                        selectedPeer = peer
+                        showingPeerDetail = true
+                    }
                 }
             }
 
@@ -311,33 +323,275 @@ public struct TacticalMapView: View {
     }
 }
 
-// MARK: - Peer Marker View
+// MARK: - Peer Marker View (Blue Triangle)
 
 struct PeerMarkerView: View {
     let peer: PeerPosition
+    let onTap: () -> Void
 
     var body: some View {
-        VStack(spacing: 2) {
-            Image(systemName: "person.fill")
-                .font(.caption)
-                .foregroundColor(.white)
-                .padding(6)
-                .background(Color.blue)
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.white, lineWidth: 2)
-                )
+        Button(action: onTap) {
+            VStack(spacing: 0) {
+                // Blue triangle pointing down
+                Image(systemName: "triangle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.blue)
+                    .rotationEffect(.degrees(180))
 
-            Text(peer.callsign)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color.blue.opacity(0.8))
-                .cornerRadius(4)
+                // Callsign label
+                Text(peer.callsign)
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.blue)
+                    .cornerRadius(4)
+            }
         }
+    }
+}
+
+// MARK: - Peer Detail Sheet
+
+struct PeerDetailSheet: View {
+    let peer: PeerPosition
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
+
+    @State private var showingFullProfile = false
+
+    private var contact: ContactProfile? {
+        contactsVM.contacts.first { $0.deviceId == peer.deviceId }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Identity") {
+                    HStack {
+                        Text("Callsign")
+                        Spacer()
+                        Text(peer.callsign)
+                    }
+
+                    if let nickname = contact?.nickname, !nickname.isEmpty {
+                        HStack {
+                            Text("Nickname")
+                            Spacer()
+                            Text(nickname)
+                        }
+                    }
+                }
+
+                Section("Location") {
+                    HStack {
+                        Text("Coordinates")
+                        Spacer()
+                        Text(CoordinateFormatter.format(
+                            latitude: peer.latitude,
+                            longitude: peer.longitude,
+                            format: settingsVM.settings.coordFormat
+                        ))
+                        .font(.system(.body, design: .monospaced))
+                    }
+
+                    HStack {
+                        Text("Last Seen")
+                        Spacer()
+                        Text(formatDate(peer.lastUpdated))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section {
+                    Button {
+                        showingFullProfile = true
+                    } label: {
+                        HStack {
+                            Label("View Full Profile", systemImage: "info.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(peer.callsign)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingFullProfile) {
+                PeerFullProfileSheet(peer: peer)
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Peer Full Profile Sheet
+
+struct PeerFullProfileSheet: View {
+    let peer: PeerPosition
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
+
+    private var contact: ContactProfile? {
+        contactsVM.contacts.first { $0.deviceId == peer.deviceId }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Identity") {
+                    HStack {
+                        Text("Callsign")
+                        Spacer()
+                        Text(peer.callsign)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let nickname = contact?.nickname, !nickname.isEmpty {
+                        HStack {
+                            Text("Nickname")
+                            Spacer()
+                            Text(nickname)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let fullName = contact?.fullName {
+                        HStack {
+                            Text("Name")
+                            Spacer()
+                            Text(fullName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                if contact?.company != nil || contact?.platoon != nil || contact?.squad != nil {
+                    Section("Unit") {
+                        if let company = contact?.company {
+                            HStack {
+                                Text("Company")
+                                Spacer()
+                                Text(company)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let platoon = contact?.platoon {
+                            HStack {
+                                Text("Platoon/Troop")
+                                Spacer()
+                                Text(platoon)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let squad = contact?.squad {
+                            HStack {
+                                Text("Squad")
+                                Spacer()
+                                Text(squad)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                if let role = contact?.role, role != .none {
+                    Section("Role") {
+                        HStack {
+                            Text("Position")
+                            Spacer()
+                            Text(role.displayName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                if contact?.mobile != nil || contact?.email != nil {
+                    Section("Contact") {
+                        if let mobile = contact?.mobile {
+                            HStack {
+                                Text("Phone")
+                                Spacer()
+                                Text(mobile)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let email = contact?.email {
+                            HStack {
+                                Text("Email")
+                                Spacer()
+                                Text(email)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Location") {
+                    HStack {
+                        Text("Coordinates")
+                        Spacer()
+                        Text(CoordinateFormatter.format(
+                            latitude: peer.latitude,
+                            longitude: peer.longitude,
+                            format: settingsVM.settings.coordFormat
+                        ))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Last Updated")
+                        Spacer()
+                        Text(formatDate(peer.lastUpdated))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section("Device") {
+                    HStack {
+                        Text("Device ID")
+                        Spacer()
+                        Text(String(peer.deviceId.prefix(12)) + "...")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Full Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .medium
+        return formatter.string(from: date)
     }
 }
 
