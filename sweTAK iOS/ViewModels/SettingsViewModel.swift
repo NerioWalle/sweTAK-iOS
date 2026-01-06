@@ -211,6 +211,7 @@ public final class SettingsViewModel: ObservableObject {
         static let mqttSettings = "swetak_mqtt_settings"
         static let mapTilerSettings = "swetak_maptiler_settings"
         static let mapProvider = "swetak_map_provider"
+        static let mapStyle = "swetak_map_style"
         static let profile = "swetak_profile"
         static let deviceId = "swetak_device_id"
     }
@@ -268,6 +269,13 @@ public final class SettingsViewModel: ObservableObject {
         if let storedProvider = UserDefaults.standard.string(forKey: Keys.mapProvider),
            let provider = MapProvider(rawValue: storedProvider) {
             mapProvider = provider
+        }
+
+        // Load map style (default from settings, also set as current for this session)
+        if let storedStyle = UserDefaults.standard.string(forKey: Keys.mapStyle),
+           let style = MapStyle(rawValue: storedStyle) {
+            defaultMapStyle = style
+            currentMapStyle = style
         }
 
         // Load profile
@@ -393,12 +401,26 @@ public final class SettingsViewModel: ObservableObject {
 
     // MARK: - Full Map Style Support
 
-    /// Current full map style
+    /// Current map style for this session (temporary, resets on app restart)
     @Published public var currentMapStyle: MapStyle = .standard
 
-    /// Set full map style (all 6 options)
+    /// Default map style from Settings (persistent, used on app startup)
+    @Published public private(set) var defaultMapStyle: MapStyle = .standard
+
+    /// Set current map style for this session only (from map dropdown)
+    /// Does NOT persist - resets to defaultMapStyle on app restart
     public func setFullMapStyle(_ style: MapStyle) {
         currentMapStyle = style
+        logger.debug("Session map style set to: \(style.rawValue)")
+    }
+
+    /// Set default map style from Settings page (persists across app restarts)
+    /// Does NOT change current session - only affects next app startup
+    public func setDefaultMapStyle(_ style: MapStyle) {
+        defaultMapStyle = style
+        // Do NOT update currentMapStyle - that's for this session only
+        // Save to UserDefaults for next startup
+        UserDefaults.standard.set(style.rawValue, forKey: Keys.mapStyle)
         // Also update the legacy setting for compatibility
         switch style {
         case .satellite, .hybrid:
@@ -409,7 +431,7 @@ public final class SettingsViewModel: ObservableObject {
             settings.mapStyle = .streets
         }
         saveSettings()
-        logger.debug("Full map style set to: \(style.rawValue)")
+        logger.debug("Default map style set to: \(style.rawValue) (takes effect on next startup)")
     }
 
     /// Set breadcrumb color

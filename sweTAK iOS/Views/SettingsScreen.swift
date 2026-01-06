@@ -86,8 +86,8 @@ public struct SettingsScreen: View {
         Section("Map") {
             // Map style picker - using full MapStyle enum
             Picker("Map Style", selection: Binding(
-                get: { settingsVM.currentMapStyle },
-                set: { settingsVM.setFullMapStyle($0) }
+                get: { settingsVM.defaultMapStyle },
+                set: { settingsVM.setDefaultMapStyle($0) }
             )) {
                 ForEach(MapStyle.allCases, id: \.self) { style in
                     Label(style.displayName, systemImage: style.icon).tag(style)
