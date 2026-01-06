@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import Photos
+import UniformTypeIdentifiers
 
 /// Main view of the app containing the map and overlay controls
 /// Redesigned to match Android MapScreen layout with overlay-based navigation
@@ -88,9 +89,10 @@ public struct MainView: View {
     @State private var showingBroadcastConfirmation = false
     @State private var broadcastMessage = ""
 
-    // Share sheet for saving photos
-    @State private var shareSheetImage: UIImage? = nil
-    @State private var showingShareSheet = false
+    // File export for saving photos
+    @State private var exportFileURL: URL? = nil
+    @State private var showingFileExporter = false
+    @State private var exportDocument: ImageDocument? = nil
 
     // Notification banner state
     @State private var pendingReports: [Report] = []
@@ -404,7 +406,11 @@ public struct MainView: View {
                         savePhotoToLibrary(base64String: base64String)
                     },
                     onSaveToFiles: { base64String in
-                        savePhotoToFiles(base64String: base64String)
+                        // Close sheet first, then show file exporter
+                        showingPinDetails = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            savePhotoToFiles(base64String: base64String)
+                        }
                     },
                     onEdit: {
                         showingPinDetails = false
@@ -510,11 +516,20 @@ public struct MainView: View {
                 pinsVM.addPin(pin)
             }
         }
-        // Share sheet for saving photos to Files
-        .sheet(isPresented: $showingShareSheet) {
-            if let image = shareSheetImage {
-                ShareSheet(items: [image])
+        // File exporter for saving photos to Files
+        .fileExporter(
+            isPresented: $showingFileExporter,
+            document: exportDocument,
+            contentType: .jpeg,
+            defaultFilename: exportDocument?.filename ?? "sweTAK-photo.jpg"
+        ) { result in
+            switch result {
+            case .success(let url):
+                print("[MainView] Photo saved to: \(url)")
+            case .failure(let error):
+                print("[MainView] Failed to save photo: \(error)")
             }
+            exportDocument = nil
         }
         // Listen for incoming notifications - sticky (no auto-dismiss)
         .onReceive(reportsVM.incomingNotification) { report in
@@ -605,23 +620,43 @@ public struct MainView: View {
     }
 
     private func savePhotoToLibrary(base64String: String) {
-        guard let imageData = Data(base64Encoded: base64String),
+        // Clean the base64 string (remove data URL prefix if present)
+        let cleanedBase64 = PhotoUtilities.cleanBase64String(base64String)
+
+        guard let imageData = Data(base64Encoded: cleanedBase64),
               let image = UIImage(data: imageData) else { return }
 
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else { return }
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            DispatchQueue.main.async {
+                guard status == .authorized || status == .limited else { return }
+                PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
             }
         }
     }
 
     private func savePhotoToFiles(base64String: String) {
-        guard let imageData = Data(base64Encoded: base64String),
-              let image = UIImage(data: imageData) else { return }
+        // Clean the base64 string (remove data URL prefix if present)
+        let cleanedBase64 = PhotoUtilities.cleanBase64String(base64String)
 
-        shareSheetImage = image
-        showingShareSheet = true
+        guard let imageData = Data(base64Encoded: cleanedBase64) else {
+            print("[MainView] Failed to decode base64 image data")
+            return
+        }
+
+        // Generate military date-time filename: sweTAK-DDHHmmZ-MMMYY.jpg
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "ddHHmm"
+        let dateTimePart = formatter.string(from: Date())
+        formatter.dateFormat = "MMMy"
+        let monthYearPart = formatter.string(from: Date()).uppercased()
+        let filename = "sweTAK-\(dateTimePart)Z-\(monthYearPart).jpg"
+
+        // Create document and show file exporter
+        exportDocument = ImageDocument(imageData: imageData, filename: filename)
+        showingFileExporter = true
     }
 
     // MARK: - Map View
@@ -2255,16 +2290,30 @@ class WaypointAnnotation: NSObject, MKAnnotation {
     }
 }
 
-// MARK: - Share Sheet
+// MARK: - Image Document for File Export
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
+struct ImageDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.jpeg, .png] }
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    var imageData: Data
+    var filename: String
+
+    init(imageData: Data, filename: String) {
+        self.imageData = imageData
+        self.filename = filename
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.imageData = data
+        self.filename = "image.jpg"
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: imageData)
+    }
 }
 
 // MARK: - Combined Reports List View
