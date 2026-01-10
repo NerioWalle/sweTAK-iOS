@@ -89,7 +89,7 @@ public enum MapStyle: String, CaseIterable, Codable {
 
     public var displayName: String {
         switch self {
-        case .standard: return "Standard"
+        case .standard: return "Street"
         case .satellite: return "Satellite"
         case .hybrid: return "Hybrid"
         case .terrain: return "Terrain"
@@ -349,6 +349,11 @@ public struct AdvancedSettings: Codable, Equatable {
     /// Reject unsigned messages
     public var rejectUnsignedMessages: Bool
 
+    // MARK: - Bearing Display
+
+    /// Use mils instead of degrees for bearing display
+    public var useMilsBearing: Bool
+
     // MARK: - Defaults
 
     public init(
@@ -370,7 +375,8 @@ public struct AdvancedSettings: Codable, Equatable {
         mqttUseTLS: Bool = false,
         mqttMaxMessageAgeMinutes: Int = 5,
         messageSigningEnabled: Bool = true,
-        rejectUnsignedMessages: Bool = false
+        rejectUnsignedMessages: Bool = false,
+        useMilsBearing: Bool = false
     ) {
         self.themeMode = themeMode
         self.nightVisionColor = nightVisionColor
@@ -391,6 +397,7 @@ public struct AdvancedSettings: Codable, Equatable {
         self.mqttMaxMessageAgeMinutes = mqttMaxMessageAgeMinutes
         self.messageSigningEnabled = messageSigningEnabled
         self.rejectUnsignedMessages = rejectUnsignedMessages
+        self.useMilsBearing = useMilsBearing
     }
 
     // MARK: - Computed Properties

@@ -143,12 +143,12 @@ public final class RoutesViewModel: ObservableObject {
     }
 
     /// Total distance of all breadcrumb routes in meters
-    public var totalBreadcrumbDistance: Float {
+    public var totalBreadcrumbDistance: Double {
         breadcrumbRoutes.reduce(0) { $0 + $1.totalDistanceMeters }
     }
 
     /// Total distance of all planned routes in meters
-    public var totalPlannedDistance: Float {
+    public var totalPlannedDistance: Double {
         plannedRoutes.reduce(0) { sum, route in
             sum + route.totalDistanceMeters
         }

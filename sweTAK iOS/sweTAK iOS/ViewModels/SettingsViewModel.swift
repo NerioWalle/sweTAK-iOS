@@ -33,12 +33,35 @@ public enum SettingsMapStyle: String, Codable, CaseIterable {
     public var displayName: String { rawValue }
 }
 
+/// Appearance mode options
+public enum AppearanceMode: String, Codable, CaseIterable {
+    case system = "System"
+    case dark = "Dark"
+    case light = "Light"
+
+    public var displayName: String {
+        switch self {
+        case .system: return "System setting"
+        case .dark: return "Dark mode"
+        case .light: return "Light mode"
+        }
+    }
+
+    public var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .dark: return .dark
+        case .light: return .light
+        }
+    }
+}
+
 /// GPS interval settings
 public struct GPSInterval: Codable, Equatable {
     public var value: Int
     public var unit: String  // "s" for seconds, "m" for minutes
 
-    public init(value: Int = 5, unit: String = "s") {
+    public init(value: Int = 2, unit: String = "m") {
         self.value = value
         self.unit = unit
     }
@@ -57,7 +80,7 @@ public struct GPSInterval: Codable, Equatable {
 
 /// Settings state model
 public struct SettingsState: Codable, Equatable {
-    public var isDarkMode: Bool = false
+    public var appearanceMode: AppearanceMode = .system
     public var unitSystem: SettingsUnitSystem = .metric
     public var coordFormat: CoordinateFormat = .mgrs
     public var gpsInterval: GPSInterval = GPSInterval()
@@ -65,6 +88,8 @@ public struct SettingsState: Codable, Equatable {
     public var breadcrumbColorHex: String = "FF9800"  // Orange
     public var mapOrientation: MapOrientationMode = .freeRotate
     public var messageSigningEnabled: Bool = false
+    /// Optional bearing format override. When nil, derives from coordFormat (MGRS = mils).
+    public var useMilsBearingOverride: Bool? = nil
 
     public init() {}
 }
@@ -112,6 +137,26 @@ public enum MapTilerStyle: String {
     case topographic = "topo-v2"
 }
 
+/// Map provider options
+public enum MapProvider: String, Codable, CaseIterable {
+    case appleMaps = "apple"
+    case mapTiler = "maptiler"
+
+    public var displayName: String {
+        switch self {
+        case .appleMaps: return "Apple Maps"
+        case .mapTiler: return "MapTiler"
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .appleMaps: return "apple.logo"
+        case .mapTiler: return "map"
+        }
+    }
+}
+
 /// ViewModel for managing app settings
 /// Mirrors Android SettingsViewModel functionality
 public final class SettingsViewModel: ObservableObject {
@@ -130,6 +175,7 @@ public final class SettingsViewModel: ObservableObject {
     @Published public private(set) var transportMode: TransportMode = .localUDP
     @Published public private(set) var mqttSettings = MQTTSettings()
     @Published public private(set) var mapTilerSettings = MapTilerSettings()
+    @Published public private(set) var mapProvider: MapProvider = .appleMaps
     @Published public private(set) var profile = LocalProfile()
 
     // MARK: - Lighting State
@@ -166,6 +212,8 @@ public final class SettingsViewModel: ObservableObject {
         static let transportMode = "swetak_transport_mode"
         static let mqttSettings = "swetak_mqtt_settings"
         static let mapTilerSettings = "swetak_maptiler_settings"
+        static let mapProvider = "swetak_map_provider"
+        static let mapStyle = "swetak_map_style"
         static let profile = "swetak_profile"
         static let deviceId = "swetak_device_id"
     }
@@ -219,6 +267,19 @@ public final class SettingsViewModel: ObservableObject {
             mapTilerSettings = stored
         }
 
+        // Load map provider
+        if let storedProvider = UserDefaults.standard.string(forKey: Keys.mapProvider),
+           let provider = MapProvider(rawValue: storedProvider) {
+            mapProvider = provider
+        }
+
+        // Load map style (default from settings, also set as current for this session)
+        if let storedStyle = UserDefaults.standard.string(forKey: Keys.mapStyle),
+           let style = MapStyle(rawValue: storedStyle) {
+            defaultMapStyle = style
+            currentMapStyle = style
+        }
+
         // Load profile
         if let data = UserDefaults.standard.data(forKey: Keys.profile),
            let stored = try? JSONDecoder().decode(LocalProfile.self, from: data) {
@@ -248,6 +309,10 @@ public final class SettingsViewModel: ObservableObject {
         if let data = try? JSONEncoder().encode(mapTilerSettings) {
             UserDefaults.standard.set(data, forKey: Keys.mapTilerSettings)
         }
+    }
+
+    private func saveMapProvider() {
+        UserDefaults.standard.set(mapProvider.rawValue, forKey: Keys.mapProvider)
     }
 
     private func saveProfile() {
@@ -305,9 +370,9 @@ public final class SettingsViewModel: ObservableObject {
 
     // MARK: - Display Settings
 
-    /// Set dark mode
-    public func setDarkMode(_ isDark: Bool) {
-        settings.isDarkMode = isDark
+    /// Set appearance mode
+    public func setAppearanceMode(_ mode: AppearanceMode) {
+        settings.appearanceMode = mode
         saveSettings()
     }
 
@@ -338,12 +403,26 @@ public final class SettingsViewModel: ObservableObject {
 
     // MARK: - Full Map Style Support
 
-    /// Current full map style
+    /// Current map style for this session (temporary, resets on app restart)
     @Published public var currentMapStyle: MapStyle = .standard
 
-    /// Set full map style (all 6 options)
+    /// Default map style from Settings (persistent, used on app startup)
+    @Published public private(set) var defaultMapStyle: MapStyle = .standard
+
+    /// Set current map style for this session only (from map dropdown)
+    /// Does NOT persist - resets to defaultMapStyle on app restart
     public func setFullMapStyle(_ style: MapStyle) {
         currentMapStyle = style
+        logger.debug("Session map style set to: \(style.rawValue)")
+    }
+
+    /// Set default map style from Settings page (persists across app restarts)
+    /// Does NOT change current session - only affects next app startup
+    public func setDefaultMapStyle(_ style: MapStyle) {
+        defaultMapStyle = style
+        // Do NOT update currentMapStyle - that's for this session only
+        // Save to UserDefaults for next startup
+        UserDefaults.standard.set(style.rawValue, forKey: Keys.mapStyle)
         // Also update the legacy setting for compatibility
         switch style {
         case .satellite, .hybrid:
@@ -354,7 +433,7 @@ public final class SettingsViewModel: ObservableObject {
             settings.mapStyle = .streets
         }
         saveSettings()
-        logger.debug("Full map style set to: \(style.rawValue)")
+        logger.debug("Default map style set to: \(style.rawValue) (takes effect on next startup)")
     }
 
     /// Set breadcrumb color
@@ -385,6 +464,19 @@ public final class SettingsViewModel: ObservableObject {
     public func setMessageSigningEnabled(_ enabled: Bool) {
         settings.messageSigningEnabled = enabled
         saveSettings()
+    }
+
+    /// Toggle bearing format between degrees and mils
+    public func toggleBearingFormat() {
+        // Get current effective value and toggle it
+        let currentUseMils = settings.useMilsBearingOverride ?? (settings.coordFormat == .mgrs)
+        settings.useMilsBearingOverride = !currentUseMils
+        saveSettings()
+    }
+
+    /// Whether to use mils for bearing display (derived from override or coordFormat)
+    public var useMilsBearing: Bool {
+        settings.useMilsBearingOverride ?? (settings.coordFormat == .mgrs)
     }
 
     // MARK: - Transport Settings
@@ -440,6 +532,13 @@ public final class SettingsViewModel: ObservableObject {
         logger.info("MapTiler API key updated")
     }
 
+    /// Set map provider
+    public func setMapProvider(_ provider: MapProvider) {
+        mapProvider = provider
+        saveMapProvider()
+        logger.info("Map provider set to: \(provider.displayName)")
+    }
+
     /// Get the MapTiler style URL for a given map style
     public func mapTilerURL(for style: MapStyle) -> String? {
         guard mapTilerSettings.isValid else { return nil }
@@ -449,7 +548,7 @@ public final class SettingsViewModel: ObservableObject {
         case .standard:
             tilerStyle = .streets
         case .satellite:
-            return nil // Use Apple's satellite
+            tilerStyle = .satellite
         case .hybrid:
             tilerStyle = .hybrid
         case .terrain:

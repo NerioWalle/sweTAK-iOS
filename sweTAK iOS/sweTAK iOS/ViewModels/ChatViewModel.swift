@@ -33,6 +33,13 @@ public final class ChatViewModel: ObservableObject {
     @Published public private(set) var threads: [String: [ChatMessage]] = [:]
     @Published public private(set) var unreadCounts: [String: Int] = [:]
 
+    // MARK: - Notification Publisher
+
+    private let incomingNotificationSubject = PassthroughSubject<IncomingChatNotification, Never>()
+    public var incomingNotification: AnyPublisher<IncomingChatNotification, Never> {
+        incomingNotificationSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - Current Thread
 
     private var currentThreadId: String?
@@ -62,17 +69,53 @@ public final class ChatViewModel: ObservableObject {
     // MARK: - Storage
 
     private func loadFromStorage() {
+        // Use TransportCoordinator.shared.deviceId for consistency
+        let myDeviceId = TransportCoordinator.shared.deviceId
+
         // Load threads
         if let data = UserDefaults.standard.data(forKey: Keys.threads),
            let storedThreads = try? JSONDecoder().decode([String: [ChatMessage]].self, from: data) {
-            threads = storedThreads
-            logger.info("Loaded \(storedThreads.count) chat threads from storage")
+
+            // Filter out messages that shouldn't be here (conversations between other devices)
+            var filteredThreads: [String: [ChatMessage]] = [:]
+            var removedCount = 0
+
+            for (threadId, messages) in storedThreads {
+                let validMessages = messages.filter { msg in
+                    // Keep message if we sent it OR it was sent to us
+                    let isFromUs = msg.fromDeviceId == myDeviceId
+                    let isToUs = msg.toDeviceId == myDeviceId
+                    return isFromUs || isToUs
+                }
+
+                removedCount += messages.count - validMessages.count
+
+                if !validMessages.isEmpty {
+                    filteredThreads[threadId] = validMessages
+                }
+            }
+
+            threads = filteredThreads
+
+            if removedCount > 0 {
+                logger.info("Cleaned up \(removedCount) invalid messages from storage")
+                saveThreads() // Persist the cleanup
+            }
+
+            logger.info("Loaded \(filteredThreads.count) chat threads from storage")
         }
 
-        // Load unread counts
+        // Load unread counts - only keep counts for threads we still have
         if let data = UserDefaults.standard.data(forKey: Keys.unreadCounts),
            let storedCounts = try? JSONDecoder().decode([String: Int].self, from: data) {
-            unreadCounts = storedCounts
+            // Filter to only keep unread counts for threads that exist
+            let validCounts = storedCounts.filter { threads[$0.key] != nil }
+            unreadCounts = validCounts
+
+            if validCounts.count != storedCounts.count {
+                logger.info("Cleaned up \(storedCounts.count - validCounts.count) orphaned unread counts")
+                saveUnreadCounts()
+            }
         }
     }
 
@@ -115,9 +158,13 @@ public final class ChatViewModel: ObservableObject {
         uiState = ChatUIState()
     }
 
-    /// Get all thread IDs
+    /// Get all thread IDs sorted by latest message (most recent first)
     public var allThreadIds: [String] {
-        Array(threads.keys).sorted()
+        Array(threads.keys).sorted { threadA, threadB in
+            let lastTimestampA = threads[threadA]?.last?.timestampMillis ?? 0
+            let lastTimestampB = threads[threadB]?.last?.timestampMillis ?? 0
+            return lastTimestampA > lastTimestampB
+        }
     }
 
     /// Get messages for a thread
@@ -187,6 +234,19 @@ public final class ChatViewModel: ObservableObject {
 
     /// Add an incoming message
     public func addIncomingMessage(_ message: ChatMessage) {
+        // Use TransportCoordinator.shared.deviceId for consistency with transport layer filtering
+        let myDeviceId = TransportCoordinator.shared.deviceId
+
+        // Safety check: Only process messages where we are a participant
+        // We should be either the sender or the receiver
+        let isFromUs = message.fromDeviceId == myDeviceId
+        let isToUs = message.toDeviceId == myDeviceId
+
+        if !isFromUs && !isToUs {
+            logger.info("addIncomingMessage: Ignoring message not involving us (from: \(message.fromDeviceId), to: \(message.toDeviceId), me: \(myDeviceId))")
+            return
+        }
+
         // For incoming messages, we key threads by the sender's deviceId
         // This ensures conversations are grouped correctly regardless of what threadId the sender uses
         let effectiveThreadId = message.fromDeviceId
@@ -229,7 +289,20 @@ public final class ChatViewModel: ObservableObject {
                 // Increment unread count
                 unreadCounts[effectiveThreadId] = (unreadCounts[effectiveThreadId] ?? 0) + 1
                 saveUnreadCounts()
-                logger.info("addIncomingMessage: Not current thread, incremented unread count")
+
+                // Emit notification for UI display
+                let contact = ContactsViewModel.shared.getContact(byDeviceId: message.fromDeviceId)
+                let callsign = contact?.callsign ?? message.fromDeviceId
+                logger.info("addIncomingMessage: Creating notification - threadId=\(effectiveThreadId), callsign=\(callsign), text=\(message.text.prefix(30))")
+                let notification = IncomingChatNotification(
+                    threadId: effectiveThreadId,
+                    fromDeviceId: message.fromDeviceId,
+                    textPreview: String(message.text.prefix(100)),
+                    callsign: callsign,
+                    nickname: contact?.nickname
+                )
+                incomingNotificationSubject.send(notification)
+                logger.info("addIncomingMessage: NOTIFICATION SENT for \(effectiveThreadId) from \(callsign)")
             }
 
             logger.debug("Added incoming message from \(message.fromDeviceId)")

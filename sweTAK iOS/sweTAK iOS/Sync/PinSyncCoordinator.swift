@@ -130,6 +130,10 @@ public final class PinSyncCoordinator {
     public func requestAllPinsFromNetwork(callsign: String, deviceId: String) {
         logger.info("requestAllPinsFromNetwork() called with callsign=\(callsign) deviceId=\(deviceId)")
 
+        // Start accepting incoming pins for a limited time window
+        PinsViewModel.shared.startAwaitingPinSync(timeoutSeconds: 30)
+
+        // Send the pin request to the network
         TransportCoordinator.shared.requestAllPins(callsign: callsign)
     }
 

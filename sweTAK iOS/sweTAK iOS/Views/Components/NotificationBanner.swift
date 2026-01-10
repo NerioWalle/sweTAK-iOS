@@ -276,84 +276,68 @@ public struct NotificationBannerView: View {
 
 // MARK: - Chat Notification Banner
 
-/// Specialized banner for chat notifications
+/// Specialized banner for chat notifications with white background
 public struct ChatNotificationBanner: View {
     let notification: IncomingChatNotification
-    let onTap: () -> Void
+    let onClick: () -> Void
     let onDismiss: () -> Void
-
-    @State private var isVisible = true
 
     public init(
         notification: IncomingChatNotification,
-        onTap: @escaping () -> Void,
+        onClick: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.notification = notification
-        self.onTap = onTap
+        self.onClick = onClick
         self.onDismiss = onDismiss
     }
 
     public var body: some View {
-        if isVisible {
-            Button(action: {
-                onTap()
-                withAnimation {
-                    isVisible = false
-                }
-            }) {
-                HStack(spacing: 12) {
-                    // Avatar
-                    ZStack {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 40, height: 40)
+        HStack(spacing: 12) {
+            // Avatar
+            ZStack {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 40, height: 40)
 
-                        Text(String(notification.callsign.prefix(1)).uppercased())
-                            .font(.headline)
-                            .foregroundColor(.white)
-                    }
-
-                    // Message content
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(notification.displayName)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-
-                        Text(notification.textPreview)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-
-                    Spacer()
-
-                    // Close button
-                    Button {
-                        withAnimation {
-                            isVisible = false
-                        }
-                        onDismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(8)
-                            .background(Circle().fill(Color(.systemGray5)))
-                    }
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color(.systemBackground))
-                        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
-                )
-                .padding(.horizontal)
+                Text(String(notification.callsign.prefix(1)).uppercased())
+                    .font(.headline)
+                    .foregroundColor(.white)
             }
-            .buttonStyle(.plain)
-            .transition(.move(edge: .top).combined(with: .opacity))
+
+            // Message content
+            VStack(alignment: .leading, spacing: 4) {
+                Text(notification.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.black)
+
+                Text(notification.textPreview)
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            // Close button
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(8)
+                    .background(Circle().fill(Color.gray.opacity(0.2)))
+            }
         }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+        )
+        .onTapGesture { onClick() }
     }
 }
 

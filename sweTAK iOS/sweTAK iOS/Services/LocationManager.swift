@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import CoreMotion
 import Combine
 import os.log
 
@@ -18,6 +19,11 @@ public final class LocationManager: NSObject, ObservableObject {
     // MARK: - Location Manager
 
     private let locationManager = CLLocationManager()
+
+    // MARK: - Motion Manager (for device pitch detection)
+
+    private let motionManager = CMMotionManager()
+    @Published public private(set) var devicePitch: Double = 0  // Degrees from horizontal (0 = flat, 90 = vertical)
 
     // MARK: - Published State
 
@@ -38,6 +44,13 @@ public final class LocationManager: NSObject, ObservableObject {
     private var broadcastInterval: TimeInterval = 5.0
     private var lastBroadcastTime: Date?
     private var broadcastTimer: Timer?
+
+    // MARK: - Heading Smoothing
+
+    private var smoothedHeading: Double = 0
+    private var lastHeadingUpdateTime: Date = .distantPast
+    private let headingUpdateMinInterval: TimeInterval = 0.15  // Max ~7 updates per second
+    private let headingChangeThreshold: Double = 5.0  // Minimum degrees change to report
 
     // MARK: - Publishers
 
@@ -110,11 +123,38 @@ public final class LocationManager: NSObject, ObservableObject {
         // Enable background location updates after starting location updates
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.showsBackgroundLocationIndicator = true
+
+        // Start device motion tracking for pitch detection
+        startDeviceMotionTracking()
         #endif
         isTracking = true
 
         // Start broadcast timer
         startBroadcastTimer()
+    }
+
+    /// Start device motion tracking for pitch detection
+    private func startDeviceMotionTracking() {
+        guard motionManager.isDeviceMotionAvailable else {
+            logger.warning("Device motion not available")
+            return
+        }
+
+        motionManager.deviceMotionUpdateInterval = 0.1  // 10 updates per second
+        motionManager.startDeviceMotionUpdates(to: .main) { [weak self] motion, error in
+            guard let self = self, let motion = motion else { return }
+
+            // Calculate pitch angle from gravity vector
+            // pitch = atan2(gravity.z, sqrt(gravity.x^2 + gravity.y^2))
+            // When flat: gravity.z ≈ -1, pitch ≈ 0
+            // When vertical (screen facing user): gravity.z ≈ 0, pitch ≈ 90
+            let gravity = motion.gravity
+            let pitchRadians = atan2(-gravity.z, sqrt(gravity.x * gravity.x + gravity.y * gravity.y))
+            let pitchDegrees = pitchRadians * 180.0 / .pi
+
+            // Update published value (absolute value, 0 = flat, 90 = vertical)
+            self.devicePitch = abs(pitchDegrees)
+        }
     }
 
     /// Stop tracking location
@@ -125,6 +165,7 @@ public final class LocationManager: NSObject, ObservableObject {
         locationManager.stopUpdatingLocation()
         #if os(iOS)
         locationManager.stopUpdatingHeading()
+        motionManager.stopDeviceMotionUpdates()
         #endif
         isTracking = false
 
@@ -254,8 +295,11 @@ public final class LocationManager: NSObject, ObservableObject {
     }
 
     /// Current heading in degrees
+    /// Returns the smoothed heading for stable map rotation
     public var currentHeadingDegrees: Double? {
-        currentHeading?.trueHeading
+        // Return smoothed heading if we have any heading data
+        guard currentHeading != nil else { return nil }
+        return smoothedHeading
     }
 
     /// Current speed in m/s
@@ -307,13 +351,39 @@ extension LocationManager: CLLocationManagerDelegate {
     }
 
     public func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        guard newHeading.headingAccuracy >= 0 else { return }
+        // Reject invalid or low-accuracy readings (accuracy > 20 degrees means unreliable)
+        // At 90 degree phone angle, accuracy is often poor
+        guard newHeading.headingAccuracy >= 0 && newHeading.headingAccuracy <= 20 else { return }
 
-        currentHeading = newHeading
-        headingSubject.send(newHeading)
+        // Rate limit updates to prevent rapid fluctuations
+        let now = Date()
+        guard now.timeIntervalSince(lastHeadingUpdateTime) >= headingUpdateMinInterval else { return }
 
-        // Update map view model
-        MapViewModel.shared.updateDeviceHeading(newHeading.trueHeading)
+        let rawHeading = newHeading.trueHeading
+
+        // Apply low-pass filter for smoothing (handle 0/360 wraparound)
+        var delta = rawHeading - smoothedHeading
+        if delta > 180 { delta -= 360 }
+        if delta < -180 { delta += 360 }
+
+        // Smoothing factor: 0.2 = more smoothing, less responsive to jitter
+        smoothedHeading += delta * 0.2
+        // Normalize to 0-360
+        if smoothedHeading < 0 { smoothedHeading += 360 }
+        if smoothedHeading >= 360 { smoothedHeading -= 360 }
+
+        // Only update if heading changed significantly
+        var headingChange = abs(smoothedHeading - (currentHeading?.trueHeading ?? 0))
+        if headingChange > 180 { headingChange = 360 - headingChange }
+
+        if headingChange >= headingChangeThreshold || currentHeading == nil {
+            currentHeading = newHeading
+            headingSubject.send(newHeading)
+            lastHeadingUpdateTime = now
+
+            // Update map view model with smoothed heading
+            MapViewModel.shared.updateDeviceHeading(smoothedHeading)
+        }
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {

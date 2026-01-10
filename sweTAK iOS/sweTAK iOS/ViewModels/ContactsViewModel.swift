@@ -50,70 +50,6 @@ public final class ContactsViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Position Discovery
-
-    /// Handle position message for device discovery
-    /// Called by TransportCoordinator when position messages are received
-    public func handlePositionForDiscovery(deviceId: String, callsign: String) {
-        // Don't store our own position
-        if deviceId == TransportCoordinator.shared.deviceId {
-            return
-        }
-
-        // Create or update contact from position data
-        if let existing = getContact(byDeviceId: deviceId) {
-            // Update lastSeen and callsign if we have a better one
-            if callsign.isEmpty || (existing.callsign != nil && !existing.callsign!.isEmpty) {
-                // Just update lastSeen
-                let updatedProfile = ContactProfile(
-                    deviceId: deviceId,
-                    nickname: existing.nickname,
-                    callsign: existing.callsign,
-                    firstName: existing.firstName,
-                    lastName: existing.lastName,
-                    company: existing.company,
-                    platoon: existing.platoon,
-                    squad: existing.squad,
-                    mobile: existing.mobile,
-                    email: existing.email,
-                    photoUri: existing.photoUri,
-                    role: existing.role,
-                    lastSeenMs: Date.currentMillis,
-                    fromIp: existing.fromIp
-                )
-                upsertContact(updatedProfile)
-            } else {
-                // Update callsign and lastSeen
-                let updatedProfile = ContactProfile(
-                    deviceId: deviceId,
-                    nickname: existing.nickname,
-                    callsign: callsign,
-                    firstName: existing.firstName,
-                    lastName: existing.lastName,
-                    company: existing.company,
-                    platoon: existing.platoon,
-                    squad: existing.squad,
-                    mobile: existing.mobile,
-                    email: existing.email,
-                    photoUri: existing.photoUri,
-                    role: existing.role,
-                    lastSeenMs: Date.currentMillis,
-                    fromIp: existing.fromIp
-                )
-                upsertContact(updatedProfile)
-            }
-        } else {
-            // Create new minimal contact from position
-            let newProfile = ContactProfile(
-                deviceId: deviceId,
-                callsign: callsign.isEmpty ? nil : callsign,
-                lastSeenMs: Date.currentMillis
-            )
-            upsertContact(newProfile)
-            logger.info("Discovered new device from position: \(callsign.isEmpty ? deviceId : callsign)")
-        }
-    }
-
     // MARK: - Storage
 
     private func loadFromStorage() {
@@ -170,8 +106,8 @@ public final class ContactsViewModel: ObservableObject {
         if var profile = myProfile {
             profile = ContactProfile(
                 deviceId: deviceId,
-                callsign: callsign,
                 nickname: profile.nickname,
+                callsign: callsign,
                 firstName: profile.firstName,
                 lastName: profile.lastName,
                 company: profile.company,
@@ -291,15 +227,21 @@ public final class ContactsViewModel: ObservableObject {
     }
 
     /// Set my profile directly
-    public func setMyProfile(_ profile: ContactProfile) {
+    /// - Parameters:
+    ///   - profile: The profile to set
+    ///   - broadcast: Whether to broadcast the profile to the network (default: false to avoid double broadcast when called from SettingsViewModel)
+    public func setMyProfile(_ profile: ContactProfile, broadcast: Bool = false) {
         myProfile = profile
         saveMyProfile()
 
-        // Also update in contacts list
-        upsertContact(profile)
+        // Remove own profile from contacts list if present (should only appear as "Me")
+        contacts.removeAll { $0.deviceId == profile.deviceId }
+        saveContacts()
 
-        // Broadcast to network
-        TransportCoordinator.shared.publishProfile(profile)
+        // Optionally broadcast to network
+        if broadcast {
+            TransportCoordinator.shared.publishProfile(profile)
+        }
         logger.info("Set my profile: \(profile.callsign ?? "Unknown")")
     }
 }

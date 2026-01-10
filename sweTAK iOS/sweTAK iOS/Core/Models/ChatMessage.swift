@@ -94,7 +94,8 @@ public struct ChatAck: Codable, Equatable {
 // MARK: - Incoming Chat Notification
 
 /// Simple in-app notification for incoming direct chat
-public struct IncomingChatNotification: Equatable {
+public struct IncomingChatNotification: Equatable, Identifiable {
+    public var id: String { threadId }
     public let threadId: String
     public let fromDeviceId: String?
     public let textPreview: String

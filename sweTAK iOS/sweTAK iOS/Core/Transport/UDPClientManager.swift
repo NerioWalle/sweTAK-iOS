@@ -471,6 +471,25 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         let toDeviceId = json["toDeviceId"] as? String ?? ""
         let timestamp = json["ts"] as? Int64 ?? Date.currentMillis
 
+        // Check if this message is for us
+        let myDeviceId = TransportCoordinator.shared.deviceId
+
+        // Reject messages from ourselves (echoes)
+        if fromDeviceId == myDeviceId {
+            logger.debug("Chat message is from us (echo), ignoring")
+            return
+        }
+
+        // Only accept messages explicitly addressed to us
+        // Do NOT accept empty toDeviceId to avoid seeing conversations between other devices
+        let isForUs = toDeviceId == myDeviceId
+        if !isForUs {
+            logger.debug("Chat message not for us (to: '\(toDeviceId)', me: '\(myDeviceId)'), ignoring")
+            return
+        }
+
+        logger.info("UDP Chat message IS for us - proceeding to deliver")
+
         let message = ChatMessage(
             threadId: threadId,
             fromDeviceId: fromDeviceId,
@@ -487,7 +506,6 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         }
 
         // Auto-send ACK
-        let myDeviceId = TransportCoordinator.shared.deviceId
         if !myDeviceId.isEmpty && fromDeviceId != myDeviceId {
             sendChatAck(threadId: threadId, fromDeviceId: myDeviceId, toDeviceId: fromDeviceId, timestamp: timestamp)
         }
@@ -716,7 +734,7 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         }
     }
 
-    /// Send profile request
+    /// Send profile request to specific host
     public func publishProfileRequest(to host: String, callsign: String?, deviceId: String?) {
         var json: [String: Any] = ["type": "profile_req"]
         if let cs = callsign { json["callsign"] = cs }
@@ -724,6 +742,19 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
 
         if let data = try? JSONSerialization.data(withJSONObject: json) {
             sendToHost(data, host: host)
+        }
+    }
+
+    /// Broadcast profile request to all peers on the network
+    public func broadcastProfileRequest(callsign: String?, deviceId: String?) {
+        var json: [String: Any] = ["type": "profile_req"]
+        if let cs = callsign { json["callsign"] = cs }
+        if let devId = deviceId { json["deviceId"] = devId }
+
+        logger.info("Broadcasting profile request from \(callsign ?? "unknown")")
+
+        if let data = try? JSONSerialization.data(withJSONObject: json) {
+            broadcast(data)
         }
     }
 

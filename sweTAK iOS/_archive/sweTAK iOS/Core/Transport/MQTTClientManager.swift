@@ -594,8 +594,8 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         }
 
         if !isForUs {
-            logger.info("Chat message not for us (to: \(toDeviceId), me: \(myDeviceId)) - but processing anyway for debug")
-            // Still process for now to debug - remove this later
+            logger.debug("Chat message not for us (to: \(toDeviceId), me: \(myDeviceId)), ignoring")
+            return
         }
 
         // Get timestamp with fallbacks

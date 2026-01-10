@@ -1,5 +1,8 @@
 import SwiftUI
 import MapKit
+import Photos
+import UniformTypeIdentifiers
+import UIKit
 
 /// Main view of the app containing the map and overlay controls
 /// Redesigned to match Android MapScreen layout with overlay-based navigation
@@ -7,6 +10,9 @@ public struct MainView: View {
     @ObservedObject private var mapVM = MapViewModel.shared
     @ObservedObject private var chatVM = ChatViewModel.shared
     @ObservedObject private var ordersVM = OrdersViewModel.shared
+    @ObservedObject private var reportsVM = ReportsViewModel.shared
+    @ObservedObject private var medevacVM = MedevacViewModel.shared
+    @ObservedObject private var methaneVM = MethaneViewModel.shared
     @ObservedObject private var settingsVM = SettingsViewModel.shared
     @ObservedObject private var locationManager = LocationManager.shared
     @ObservedObject private var pinsVM = PinsViewModel.shared
@@ -15,12 +21,22 @@ public struct MainView: View {
     // Sheet presentation state
     @State private var showingContacts = false
     @State private var showingChat = false
+    @State private var directChatNotification: IncomingChatNotification? = nil
     @State private var showingSettings = false
     @State private var showingOrders = false
     @State private var showingProfile = false
     @State private var showingRoutes = false
     @State private var showingAddPin = false
     @State private var showingAbout = false
+
+    // Orders/Reports/Requests sheet state
+    @State private var showingCreateOBOOrder = false
+    @State private var showingCreateFivePOrder = false
+    @State private var showingCreatePedars = false
+    @State private var showingCreateMist = false
+    @State private var showingListReports = false
+    @State private var showingCreateMethane = false
+    @State private var showingListRequests = false
 
     // Menu presentation state
     @State private var showingLayerMenu = false
@@ -55,12 +71,120 @@ public struct MainView: View {
     @State private var showingPinActionSheet = false
     @State private var showingPinDetails = false
 
+    // Peer detail state
+    @State private var selectedPeerForDetail: PeerPosition? = nil
+    @State private var showingPeerDetail = false
+
     // Form sheet state
     @State private var showingSevenSForm = false
     @State private var showingIFSForm = false
     @State private var showingPhotoPicker = false
 
+    // Form editing state
+    @State private var editingSevenSForm = false
+    @State private var editingIFSForm = false
+    @State private var editingPinId: Int64? = nil
+    @State private var sevenSEditDraft: SevenSFormData? = nil
+    @State private var ifsEditDraft: IndirectFireFormData? = nil
+
+    // Pin create dialog state (for long-press pin creation)
+    @State private var showingPinCreateDialog = false
+    @State private var pendingPinType: NatoType = .infantry
+
+    // Route planning state
+    @StateObject private var planningState = RoutePlanningState()
+
+    // Route menu dialogs
+    @State private var showingRecordedRoutesDialog = false
+    @State private var showingPlannedRoutesDialog = false
+
+    // Broadcast position feedback
+    @State private var showingBroadcastConfirmation = false
+    @State private var broadcastMessage = ""
+
+    // File export for saving photos
+    @State private var exportFileURL: URL? = nil
+    @State private var showingFileExporter = false
+    @State private var exportDocument: ImageDocument? = nil
+
+    // Notification banner state
+    @State private var pendingChats: [IncomingChatNotification] = []
+    @State private var pendingReports: [Report] = []
+    @State private var pendingMedevacs: [MedevacReport] = []
+    @State private var pendingMethanes: [MethaneRequest] = []
+    @State private var pendingOrders: [Order] = []
+
     public init() {}
+
+    /// Key for task ID based on crosshair position (for elevation fetching)
+    private var crosshairPositionKey: String {
+        guard let pos = mapVM.crosshairPosition else { return "none" }
+        // Round to 4 decimal places (~11m precision) to avoid excessive API calls
+        return String(format: "%.4f,%.4f", pos.latitude, pos.longitude)
+    }
+
+    /// Fetch elevation for crosshair position using MapTiler or Open-Elevation API
+    private func fetchCrosshairElevation(latitude: Double, longitude: Double) async -> Double? {
+        let apiKey = settingsVM.mapTilerSettings.apiKey
+
+        // Build URLs to try
+        var urls: [String] = []
+
+        // MapTiler API (if key provided)
+        if !apiKey.isEmpty {
+            let cleanKey = apiKey.replacingOccurrences(of: "pk.", with: "").trimmingCharacters(in: .whitespaces)
+            urls.append("https://api.maptiler.com/elevation/point.json?key=\(cleanKey)&lat=\(latitude)&lon=\(longitude)&units=m")
+        }
+
+        // Open-Elevation (public fallback)
+        urls.append("https://api.open-elevation.com/api/v1/lookup?locations=\(latitude),\(longitude)")
+
+        // Try each URL
+        for urlString in urls {
+            guard let url = URL(string: urlString) else { continue }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else { continue }
+
+                if let elevation = parseElevation(from: data) {
+                    return elevation
+                }
+            } catch {
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// Parse elevation from API response
+    private func parseElevation(from data: Data) -> Double? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        // MapTiler plain JSON: { "elevation": 123.4, ... }
+        if let elevation = json["elevation"] as? Double {
+            return elevation
+        }
+
+        // MapTiler GeoJSON: features[0].properties.elevation
+        if let features = json["features"] as? [[String: Any]],
+           let first = features.first,
+           let properties = first["properties"] as? [String: Any],
+           let elevation = properties["elevation"] as? Double {
+            return elevation
+        }
+
+        // Open-Elevation: { "results": [ { "elevation": 123, ... } ] }
+        if let results = json["results"] as? [[String: Any]],
+           let first = results.first,
+           let elevation = first["elevation"] as? Double {
+            return elevation
+        }
+
+        return nil
+    }
 
     public var body: some View {
         ZStack {
@@ -94,7 +218,7 @@ public struct MainView: View {
             GeometryReader { geometry in
                 let isLandscape = geometry.size.width > geometry.size.height
                 let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
+                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
 
                 VStack(spacing: 0) {
                     // Top control panel (Layers, Lighting, Messaging)
@@ -107,7 +231,7 @@ public struct MainView: View {
                     // HUD overlay at bottom-left
                     fullHudOverlay
                         .padding(.horizontal, sidePadding)
-                        .padding(.bottom, max(16, geometry.safeAreaInsets.bottom))
+                        .padding(.bottom, max(32, geometry.safeAreaInsets.bottom))
                 }
             }
 
@@ -117,7 +241,7 @@ public struct MainView: View {
                 HStack {
                     Spacer()
                     mapControlButtons
-                        .padding(.trailing, 16)
+                        .padding(.trailing, 32)
                         .padding(.bottom, 100)
                 }
             }
@@ -126,9 +250,9 @@ public struct MainView: View {
             GeometryReader { geometry in
                 let isLandscape = geometry.size.width > geometry.size.height
                 let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(16, geometry.safeAreaInsets.leading)
+                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .center, spacing: 8) {
                     Spacer()
                         .frame(height: geometry.safeAreaInsets.top + topPadding + 68)
 
@@ -141,6 +265,44 @@ public struct MainView: View {
                 .padding(.leading, sidePadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            // Notification banners overlay
+            notificationBannersOverlay
+
+            // Route planning overlay (when in planning mode)
+            RoutePlanningOverlay(planningState: planningState) { route in
+                routesVM.addPlannedRoute(route)
+            }
+
+            // Toast notification overlay
+            if showingBroadcastConfirmation {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Image("NerioLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Text(broadcastMessage)
+                            .font(.subheadline)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(25)
+                    .padding(.bottom, 100)
+                }
+                .transition(.opacity)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation {
+                            showingBroadcastConfirmation = false
+                        }
+                    }
+                }
+            }
         }
         .ignoresSafeArea(edges: .all)
         .onAppear {
@@ -150,13 +312,29 @@ public struct MainView: View {
             locationManager.requestPermission()
             locationManager.setBroadcastInterval(settingsVM.gpsIntervalSeconds)
             locationManager.startTracking()
+
+            // Prevent screen from auto-locking while in map view
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onDisappear {
+            // Re-enable screen auto-lock when leaving map view
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .task(id: crosshairPositionKey) {
+            // Fetch elevation when crosshair position changes
+            guard let pos = mapVM.crosshairPosition else {
+                mapVM.updateCrosshairAltitude(nil)
+                return
+            }
+            let elevation = await fetchCrosshairElevation(latitude: pos.latitude, longitude: pos.longitude)
+            mapVM.updateCrosshairAltitude(elevation)
         }
         .onReceive(locationManager.$currentLocation) { location in
-            // Center map on user's position with 20km radius on first location update
+            // Center map on user's position with 5km radius on first location update
             if let location = location, !mapVM.hasCenteredInitially {
                 if let mapView = MapViewRepresentable.mapViewReference {
-                    // Calculate bounds for 20km radius (like Android implementation)
-                    let radiusMeters = 20_000.0
+                    // Calculate bounds for 5km radius
+                    let radiusMeters = 5_000.0
                     let bounds = regionForRadius(center: location.coordinate, radiusMeters: radiusMeters)
                     mapView.setRegion(bounds, animated: true)
                     mapVM.markInitiallyCentered()
@@ -170,6 +348,13 @@ public struct MainView: View {
         .sheet(isPresented: $showingChat) {
             ChatThreadsScreen()
         }
+        .sheet(item: $directChatNotification) { notification in
+            ChatScreen(
+                threadId: notification.threadId,
+                peerCallsign: notification.callsign,
+                peerNickname: notification.nickname
+            )
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsScreen()
         }
@@ -181,6 +366,48 @@ public struct MainView: View {
         }
         .sheet(isPresented: $showingAbout) {
             AboutScreen()
+        }
+        // Peer full profile sheet (shown when tapping info icon on peer marker)
+        .sheet(isPresented: $showingPeerDetail) {
+            if let peer = selectedPeerForDetail {
+                PeerFullProfileSheetView(peer: peer)
+            }
+        }
+        // Orders creation sheets
+        .sheet(isPresented: $showingCreateOBOOrder) {
+            NavigationStack {
+                CreateOBOOrderScreen()
+            }
+        }
+        .sheet(isPresented: $showingCreateFivePOrder) {
+            NavigationStack {
+                CreateFivePOrderScreen()
+            }
+        }
+        // Reports creation sheets
+        .sheet(isPresented: $showingCreatePedars) {
+            NavigationStack {
+                CreateReportScreen()
+            }
+        }
+        .sheet(isPresented: $showingCreateMist) {
+            NavigationStack {
+                CreateMedevacScreen()
+            }
+        }
+        .sheet(isPresented: $showingListReports) {
+            CombinedReportsListView()
+        }
+        // Requests sheets
+        .sheet(isPresented: $showingCreateMethane) {
+            NavigationStack {
+                CreateMethaneScreen()
+            }
+        }
+        .sheet(isPresented: $showingListRequests) {
+            NavigationStack {
+                MethaneListScreen()
+            }
         }
         .sheet(isPresented: $showingRoutes) {
             RoutesListSheet()
@@ -205,14 +432,26 @@ public struct MainView: View {
         // Pin details sheet
         .sheet(isPresented: $showingPinDetails) {
             if let pin = selectedPin {
+                let isAuthor = pin.originDeviceId == TransportCoordinator.shared.deviceId
                 PinViewDialog(
                     pin: pin,
                     isPresented: $showingPinDetails,
                     coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
+                    isAuthor: isAuthor,
+                    onSaveToPhotos: { base64String in
+                        savePhotoToLibrary(base64String: base64String)
+                    },
+                    onSaveToFiles: { base64String in
+                        // Close sheet first, then show file exporter
+                        showingPinDetails = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            savePhotoToFiles(base64String: base64String)
+                        }
+                    },
                     onEdit: {
                         showingPinDetails = false
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showingPinActionSheet = true
+                            openEditFormForPin(pin)
                         }
                     },
                     onDelete: {
@@ -228,11 +467,14 @@ public struct MainView: View {
             titleVisibility: .visible
         ) {
             if let pin = selectedPin {
+                let isAuthor = pin.originDeviceId == TransportCoordinator.shared.deviceId
                 Button("View") {
                     showingPinDetails = true
                 }
-                Button("Edit") {
-                    // TODO: Open edit pin sheet
+                if isAuthor && (pin.type == .form7S || pin.type == .formIFS) {
+                    Button("Edit") {
+                        openEditFormForPin(pin)
+                    }
                 }
                 Button("Delete", role: .destructive) {
                     pinsVM.deletePin(pinId: pin.id)
@@ -302,6 +544,100 @@ public struct MainView: View {
                 saveGeotaggedPhoto(image: image, location: location, subject: subject, description: description)
             }
         }
+        // 7S Form edit sheet
+        .sheet(isPresented: $editingSevenSForm) {
+            if let draft = sevenSEditDraft, let pinId = editingPinId {
+                SevenSFormSheet(draft: draft) { formData in
+                    // Update the existing pin with new form data
+                    if var existingPin = pinsVM.pins.first(where: { $0.id == pinId }) {
+                        existingPin.description = format7SDescription(formData)
+                        existingPin.authorCallsign = formData.reporter
+                        pinsVM.updatePin(existingPin)
+                    }
+                    editingPinId = nil
+                    sevenSEditDraft = nil
+                }
+            }
+        }
+        // IFS Form edit sheet
+        .sheet(isPresented: $editingIFSForm) {
+            if let draft = ifsEditDraft, let pinId = editingPinId {
+                let targetCoord = CLLocationCoordinate2D(
+                    latitude: draft.targetLatitude ?? 0,
+                    longitude: draft.targetLongitude ?? 0
+                )
+                IndirectFireFormSheet(
+                    draft: draft,
+                    targetCoordinateText: formatCoordinate(targetCoord)
+                ) { formData in
+                    // Update the existing pin with new form data
+                    if var existingPin = pinsVM.pins.first(where: { $0.id == pinId }) {
+                        existingPin.description = formatIFSDescription(formData)
+                        existingPin.authorCallsign = formData.observer
+                        pinsVM.updatePin(existingPin)
+                    }
+                    editingPinId = nil
+                    ifsEditDraft = nil
+                }
+            }
+        }
+        // Pin create dialog (from long-press menu)
+        .sheet(isPresented: $showingPinCreateDialog) {
+            PinCreateDialog(
+                isPresented: $showingPinCreateDialog,
+                latitude: longPressCoordinate.latitude,
+                longitude: longPressCoordinate.longitude,
+                pinType: pendingPinType
+            ) { pin in
+                pinsVM.addPin(pin)
+            }
+        }
+        // File exporter for saving photos to Files
+        .fileExporter(
+            isPresented: $showingFileExporter,
+            document: exportDocument,
+            contentType: .jpeg,
+            defaultFilename: exportDocument?.filename ?? "sweTAK-photo.jpg"
+        ) { result in
+            switch result {
+            case .success(let url):
+                print("[MainView] Photo saved to: \(url)")
+            case .failure(let error):
+                print("[MainView] Failed to save photo: \(error)")
+            }
+            exportDocument = nil
+        }
+        // Listen for incoming notifications - sticky (no auto-dismiss)
+        .onReceive(reportsVM.incomingNotification) { report in
+            // Avoid duplicates
+            if !pendingReports.contains(where: { $0.id == report.id }) {
+                withAnimation { pendingReports.append(report) }
+            }
+        }
+        .onReceive(medevacVM.incomingNotification) { medevac in
+            if !pendingMedevacs.contains(where: { $0.id == medevac.id }) {
+                withAnimation { pendingMedevacs.append(medevac) }
+            }
+        }
+        .onReceive(methaneVM.incomingNotification) { methane in
+            if !pendingMethanes.contains(where: { $0.id == methane.id }) {
+                withAnimation { pendingMethanes.append(methane) }
+            }
+        }
+        .onReceive(ordersVM.incomingNotification) { order in
+            if !pendingOrders.contains(where: { $0.id == order.id }) {
+                withAnimation { pendingOrders.append(order) }
+            }
+        }
+        .onReceive(chatVM.incomingNotification) { notification in
+            print("MainView: RECEIVED chat notification for \(notification.threadId) from \(notification.callsign)")
+            if !pendingChats.contains(where: { $0.threadId == notification.threadId }) {
+                print("MainView: ADDING notification to pendingChats (now \(pendingChats.count + 1) items)")
+                withAnimation { pendingChats.append(notification) }
+            } else {
+                print("MainView: Notification already exists for \(notification.threadId)")
+            }
+        }
     }
 
     // MARK: - Form Description Formatters
@@ -340,13 +676,142 @@ public struct MainView: View {
         return description
     }
 
+    /// Open the edit form for a form-type pin (7S or IFS)
+    private func openEditFormForPin(_ pin: NatoPin) {
+        editingPinId = pin.id
+
+        switch pin.type {
+        case .form7S:
+            // Parse existing 7S form data from description
+            if let formData = parse7SDescription(pin.description, latitude: pin.latitude, longitude: pin.longitude) {
+                sevenSEditDraft = formData
+                editingSevenSForm = true
+            }
+
+        case .formIFS:
+            // Parse existing IFS form data from description
+            if let formData = parseIFSDescription(pin.description, targetLatitude: pin.latitude, targetLongitude: pin.longitude) {
+                ifsEditDraft = formData
+                editingIFSForm = true
+            }
+
+        default:
+            break
+        }
+    }
+
+    /// Parse 7S form data from pin description
+    private func parse7SDescription(_ description: String, latitude: Double, longitude: Double) -> SevenSFormData? {
+        var dateTime = ""
+        var place = ""
+        var forceSize = ""
+        var type = ""
+        var occupation = ""
+        var symbols = ""
+        var reporter = ""
+
+        let lines = description.components(separatedBy: "\n")
+        for line in lines {
+            let parts = line.components(separatedBy: ": ")
+            guard parts.count >= 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            let value = parts.dropFirst().joined(separator: ": ").trimmingCharacters(in: .whitespaces)
+
+            switch key {
+            case "Date/Time": dateTime = value
+            case "Place": place = value
+            case "Force Size": forceSize = value
+            case "Type": type = value
+            case "Occupation": occupation = value
+            case "Symbols": symbols = value
+            case "Reporter": reporter = value
+            default: break
+            }
+        }
+
+        return SevenSFormData(
+            dateTime: dateTime,
+            place: place,
+            forceSize: forceSize,
+            type: type,
+            occupation: occupation,
+            symbols: symbols,
+            reporter: reporter,
+            latitude: latitude,
+            longitude: longitude
+        )
+    }
+
+    /// Parse IFS form data from pin description
+    private func parseIFSDescription(_ description: String, targetLatitude: Double, targetLongitude: Double) -> IndirectFireFormData? {
+        var observer = ""
+        var requestType: IFSRequestType = .fight
+        var targetDescription = ""
+        var observerPosition = ""
+        var enemyForces = ""
+        var enemyActivity = ""
+        var targetTerrain = ""
+        var widthMeters: Int? = nil
+        var angleOfViewMils: Int? = nil
+        var distanceMeters: Int? = nil
+
+        let lines = description.components(separatedBy: "\n")
+        for line in lines {
+            let parts = line.components(separatedBy: ": ")
+            guard parts.count >= 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            let value = parts.dropFirst().joined(separator: ": ").trimmingCharacters(in: .whitespaces)
+
+            switch key {
+            case "Observer": observer = value
+            case "Request":
+                if let type = IFSRequestType.allCases.first(where: { $0.displayName == value }) {
+                    requestType = type
+                }
+            case "Target": targetDescription = value
+            case "Observer Pos": observerPosition = value
+            case "Enemy Forces": enemyForces = value
+            case "Enemy Activity": enemyActivity = value
+            case "Terrain": targetTerrain = value
+            case "Width":
+                widthMeters = Int(value.replacingOccurrences(of: "m", with: ""))
+            case "Angle":
+                angleOfViewMils = Int(value.replacingOccurrences(of: " mils", with: ""))
+            case "Distance":
+                distanceMeters = Int(value.replacingOccurrences(of: "m", with: ""))
+            default: break
+            }
+        }
+
+        return IndirectFireFormData(
+            observer: observer,
+            requestType: requestType,
+            targetDescription: targetDescription,
+            observerPosition: observerPosition,
+            enemyForces: enemyForces,
+            enemyActivity: enemyActivity,
+            targetTerrain: targetTerrain,
+            widthMeters: widthMeters,
+            angleOfViewMils: angleOfViewMils,
+            distanceMeters: distanceMeters,
+            targetLatitude: targetLatitude,
+            targetLongitude: targetLongitude
+        )
+    }
+
     private func saveGeotaggedPhoto(image: UIImage, location: CLLocationCoordinate2D?, subject: String, description: String) {
-        // Save photo to Photos library with location metadata
-        // For now, just add a pin at the location
         guard let coord = location ?? Optional(longPressCoordinate) else { return }
 
         let title = subject.isEmpty ? "Photo" : subject
         let desc = description.isEmpty ? "Photo taken at \(formatCoordinate(coord))" : description
+
+        // Convert image to base64 (compressed JPEG)
+        let photoBase64: String?
+        if let imageData = image.jpegData(compressionQuality: 0.7) {
+            photoBase64 = imageData.base64EncodedString()
+        } else {
+            photoBase64 = nil
+        }
 
         let pin = NatoPin(
             id: pinsVM.generatePinId(),
@@ -356,27 +821,91 @@ public struct MainView: View {
             title: title,
             description: desc,
             authorCallsign: settingsVM.callsign,
-            originDeviceId: TransportCoordinator.shared.deviceId
+            originDeviceId: TransportCoordinator.shared.deviceId,
+            photoUri: photoBase64
         )
         pinsVM.addPin(pin)
+    }
+
+    private func savePhotoToLibrary(base64String: String) {
+        // Clean the base64 string (remove data URL prefix if present)
+        let cleanedBase64 = PhotoUtilities.cleanBase64String(base64String)
+
+        guard let imageData = Data(base64Encoded: cleanedBase64),
+              let image = UIImage(data: imageData) else { return }
+
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            DispatchQueue.main.async {
+                guard status == .authorized || status == .limited else { return }
+                PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+            }
+        }
+    }
+
+    private func savePhotoToFiles(base64String: String) {
+        // Clean the base64 string (remove data URL prefix if present)
+        let cleanedBase64 = PhotoUtilities.cleanBase64String(base64String)
+
+        guard let imageData = Data(base64Encoded: cleanedBase64) else {
+            print("[MainView] Failed to decode base64 image data")
+            return
+        }
+
+        // Generate military date-time filename: sweTAK-DDHHmmZ-MMMYY.jpg
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "ddHHmm"
+        let dateTimePart = formatter.string(from: Date())
+        formatter.dateFormat = "MMMy"
+        let monthYearPart = formatter.string(from: Date()).uppercased()
+        let filename = "sweTAK-\(dateTimePart)Z-\(monthYearPart).jpg"
+
+        // Create document and show file exporter
+        exportDocument = ImageDocument(imageData: imageData, filename: filename)
+        showingFileExporter = true
     }
 
     // MARK: - Map View
 
     private var mapView: some View {
-        MapViewRepresentable(
+        // Auto-switch to north-up when device is tilted > 70 degrees (vertical position)
+        let effectiveOrientationMode: MapOrientationMode = locationManager.devicePitch > 70
+            ? .northUp
+            : mapVM.mapOrientation
+
+        return MapViewRepresentable(
             region: $mapVM.cameraRegion,
             followMode: mapVM.followMe,
             myPosition: mapVM.myPosition,
+            myDeviceId: TransportCoordinator.shared.deviceId,
             peerPositions: Array(mapVM.peerPositions.values),
+            planningWaypoints: planningState.waypoints,
+            orientationMode: effectiveOrientationMode,
+            deviceHeading: locationManager.currentHeadingDegrees,
             onLongPress: { coordinate, screenPoint in
+                // Don't show long-press menu while planning routes
+                guard !planningState.isPlanning else { return }
                 longPressCoordinate = coordinate
                 longPressScreenPoint = screenPoint
                 showingLongPressMenu = true
             },
+            onTap: { coordinate in
+                // Add waypoint when in route planning mode
+                if planningState.isPlanning {
+                    planningState.addWaypoint(coordinate)
+                }
+            },
             onPinSelected: { pin in
                 selectedPin = pin
                 showingPinActionSheet = true
+            },
+            onPeerSelected: { deviceId in
+                if let peer = mapVM.peerPositions[deviceId] {
+                    selectedPeerForDetail = peer
+                    showingPeerDetail = true
+                }
             },
             onUserLocationScreenUpdate: { point in
                 userLocationScreenPoint = point
@@ -385,6 +914,16 @@ public struct MainView: View {
                 // User dragged the map - disable follow mode and show crosshair
                 if mapVM.followMe {
                     mapVM.setFollowMe(false)
+                }
+            },
+            onMapReady: { mapView in
+                // Center map on user's position with 5km radius when map is ready
+                if !mapVM.hasCenteredInitially,
+                   let location = locationManager.currentLocation {
+                    let radiusMeters = 5_000.0
+                    let bounds = regionForRadius(center: location.coordinate, radiusMeters: radiusMeters)
+                    mapView.setRegion(bounds, animated: false)
+                    mapVM.markInitiallyCentered()
                 }
             }
         )
@@ -432,49 +971,34 @@ public struct MainView: View {
 
     private var layersMenuButton: some View {
         Menu {
-            ForEach(MapStyle.allCases, id: \.self) { style in
-                Button {
-                    settingsVM.setFullMapStyle(style)
-                } label: {
-                    HStack {
-                        Label(style.displayName, systemImage: style.icon)
-                        if settingsVM.currentMapStyle == style {
-                            Image(systemName: "checkmark")
+            // Map style section
+            Section("Map Style") {
+                ForEach(MapStyle.allCases, id: \.self) { style in
+                    Button {
+                        settingsVM.setFullMapStyle(style)
+                    } label: {
+                        HStack {
+                            Label(style.displayName, systemImage: style.icon)
+                            if settingsVM.currentMapStyle == style {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
             }
 
-            Divider()
-
-            Menu("Recorded Routes") {
+            // Routes section
+            Section("Routes") {
                 Button {
-                    showingRecordingControls = true
+                    planningState.startPlanning()
                 } label: {
-                    Label(
-                        locationManager.isRecordingBreadcrumbs ? "Stop Recording" : "Start Recording",
-                        systemImage: locationManager.isRecordingBreadcrumbs ? "stop.fill" : "record.circle"
-                    )
+                    Label("Create Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
                 }
 
                 Button {
                     showingRoutes = true
                 } label: {
-                    Label("View Routes", systemImage: "list.bullet")
-                }
-            }
-
-            Menu("Planned Routes") {
-                Button {
-                    // TODO: Start route planning mode
-                } label: {
-                    Label("Plan Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                }
-
-                Button {
-                    showingRoutes = true
-                } label: {
-                    Label("View Routes", systemImage: "list.bullet")
+                    Label("List Routes", systemImage: "list.bullet")
                 }
             }
         } label: {
@@ -537,15 +1061,14 @@ public struct MainView: View {
     private var messagingMenuButton: some View {
         MessagingMenuButton(
             onOpenChat: { showingChat = true },
-            onCreateOBOOrder: { /* TODO: Create OBO order */ },
-            onCreateFivePOrder: { /* TODO: Create 5P order */ },
+            onCreateOBOOrder: { showingCreateOBOOrder = true },
+            onCreateFivePOrder: { showingCreateFivePOrder = true },
             onListOrders: { showingOrders = true },
-            onCreatePedars: { /* TODO: Create PEDARS */ },
-            onListPedars: { /* TODO: List PEDARS */ },
-            onCreateMist: { /* TODO: Create MIST */ },
-            onListMist: { /* TODO: List MIST */ },
-            onCreateMethane: { /* TODO: Create METHANE */ },
-            onListMethane: { /* TODO: List METHANE */ }
+            onCreatePedars: { showingCreatePedars = true },
+            onCreateMist: { showingCreateMist = true },
+            onListReports: { showingListReports = true },
+            onCreateMethane: { showingCreateMethane = true },
+            onListRequests: { showingListRequests = true }
         )
     }
 
@@ -633,12 +1156,19 @@ public struct MainView: View {
 
             // Broadcast my position
             Button {
-                if let position = locationManager.currentCoordinate {
+                // Try mapVM.myPosition first (most reliable), then locationManager
+                if let position = mapVM.myPosition ?? locationManager.currentCoordinate {
                     TransportCoordinator.shared.publishPosition(
                         callsign: settingsVM.callsign,
                         latitude: position.latitude,
                         longitude: position.longitude
                     )
+                    broadcastMessage = "Position broadcast sent"
+                } else {
+                    broadcastMessage = "Location not available"
+                }
+                withAnimation {
+                    showingBroadcastConfirmation = true
                 }
             } label: {
                 Label("Broadcast My Position", systemImage: "antenna.radiowaves.left.and.right")
@@ -703,6 +1233,11 @@ public struct MainView: View {
             } label: {
                 Label("About", systemImage: "info.circle")
             }
+
+            // Feature or Bug report link
+            Link(destination: URL(string: "https://neriodefense.atlassian.net/servicedesk/customer/portal/1/group/3/create")!) {
+                Label("Feature or Bug", systemImage: "ladybug")
+            }
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.title2)
@@ -715,16 +1250,20 @@ public struct MainView: View {
 
     private var mapControlButtons: some View {
         VStack(spacing: 12) {
-            // Center/Follow button
-            MapControlButton(
-                icon: mapVM.followMe ? "location.fill" : "location",
-                isActive: mapVM.followMe,
-                activeColor: .blue
-            ) {
+            // Center/Follow button - uses MyLocationIcon matching Android
+            Button {
                 // Enable follow mode and reset crosshair
                 crosshairOffset = .zero
                 mapVM.updateCrosshairPosition(nil)
                 mapVM.setFollowMe(true)
+            } label: {
+                MyLocationIcon(
+                    size: 24,
+                    color: mapVM.followMe ? .blue : .primary
+                )
+                .frame(width: 48, height: 48)
+                .background(mapVM.followMe ? Color.blue.opacity(0.2) : Color.clear)
+                .clipShape(Circle())
             }
 
             // Zoom in button
@@ -753,13 +1292,15 @@ public struct MainView: View {
                 }
             }
 
-            // Recording button
+            // Recording button - video recorder style matching Android
             if locationManager.isRecordingBreadcrumbs {
                 VStack(spacing: 4) {
-                    MapControlButton(icon: "stop.fill", activeColor: .red) {
+                    Button {
                         if let route = locationManager.stopRecordingBreadcrumbs() {
                             routesVM.addBreadcrumbRoute(route)
                         }
+                    } label: {
+                        RecordButtonIcon(isRecording: true, size: 48)
                     }
 
                     Text(formatRecordingDuration())
@@ -772,8 +1313,10 @@ public struct MainView: View {
                         .cornerRadius(4)
                 }
             } else {
-                MapControlButton(icon: "record.circle") {
+                Button {
                     locationManager.startRecordingBreadcrumbs()
+                } label: {
+                    RecordButtonIcon(isRecording: false, size: 48)
                 }
             }
         }
@@ -786,19 +1329,51 @@ public struct MainView: View {
 
     private var compassNeedleView: some View {
         ZStack {
-            // Background circle
+            // Background circle with 50% transparency
             Circle()
-                .fill(.ultraThinMaterial)
+                .fill(Color.white.opacity(0.5))
                 .frame(width: 44, height: 44)
 
-            // Compass needle pointing north
+            // Compass needle with red north and white south
             // Rotate based on device heading (negative because we want to show where north is)
-            Image(systemName: "location.north.fill")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(.red)
-                .rotationEffect(.degrees(-(locationManager.currentHeadingDegrees ?? 0)))
+            VStack(spacing: 0) {
+                // North pointer (red triangle)
+                Triangle()
+                    .fill(Color.red)
+                    .frame(width: 10, height: 16)
+
+                // South pointer (white triangle with dark outline for visibility)
+                Triangle()
+                    .fill(Color.white)
+                    .overlay(
+                        Triangle()
+                            .stroke(Color.gray.opacity(0.5), lineWidth: 0.5)
+                    )
+                    .frame(width: 10, height: 16)
+                    .rotationEffect(.degrees(180))
+            }
+            .rotationEffect(.degrees(-(locationManager.currentHeadingDegrees ?? 0)))
         }
         .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+        .onTapGesture(count: 2) {
+            // Toggle between north-up and heading-up modes
+            let currentMode = mapVM.mapOrientation
+            let newMode: MapOrientationMode = currentMode == .northUp ? .headingUp : .northUp
+            mapVM.setMapOrientation(newMode)
+        }
+    }
+
+    // MARK: - Triangle Shape
+
+    private struct Triangle: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+            return path
+        }
     }
 
     // MARK: - Heading Angle View
@@ -806,7 +1381,7 @@ public struct MainView: View {
     private var headingAngleView: some View {
         let heading = locationManager.currentHeadingDegrees ?? 0
         let cardinalDirection = headingToCardinal(heading)
-        let useMils = settingsVM.settings.coordFormat == .mgrs
+        let useMils = settingsVM.useMilsBearing
 
         return HStack(spacing: 4) {
             Image(systemName: "arrow.up")
@@ -834,6 +1409,9 @@ public struct MainView: View {
         .background(.ultraThinMaterial)
         .cornerRadius(8)
         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+        .onTapGesture(count: 2) {
+            settingsVM.toggleBearingFormat()
+        }
     }
 
     private func headingToCardinal(_ heading: Double) -> String {
@@ -1117,6 +1695,126 @@ public struct MainView: View {
         }
     }
 
+    // MARK: - Notification Banners Overlay
+
+    private var hasPendingNotifications: Bool {
+        !pendingChats.isEmpty || !pendingMethanes.isEmpty || !pendingMedevacs.isEmpty || !pendingOrders.isEmpty || !pendingReports.isEmpty
+    }
+
+    private func dismissChat(_ threadId: String) {
+        withAnimation { pendingChats.removeAll { $0.threadId == threadId } }
+    }
+
+    private func dismissMethane(_ id: String) {
+        withAnimation { pendingMethanes.removeAll { $0.id == id } }
+    }
+
+    private func dismissMedevac(_ id: String) {
+        withAnimation { pendingMedevacs.removeAll { $0.id == id } }
+    }
+
+    private func dismissOrder(_ id: String) {
+        withAnimation { pendingOrders.removeAll { $0.id == id } }
+    }
+
+    private func dismissReport(_ id: String) {
+        withAnimation { pendingReports.removeAll { $0.id == id } }
+    }
+
+    @ViewBuilder
+    private var chatBanners: some View {
+        ForEach(pendingChats, id: \.threadId) { notification in
+            ChatNotificationBanner(
+                notification: notification,
+                onClick: {
+                    dismissChat(notification.threadId)
+                    directChatNotification = notification
+                },
+                onDismiss: { dismissChat(notification.threadId) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var methaneBanners: some View {
+        ForEach(pendingMethanes) { methane in
+            MethaneNotificationBanner(
+                request: methane,
+                onClick: {
+                    dismissMethane(methane.id)
+                    showingListRequests = true
+                },
+                onDismiss: { dismissMethane(methane.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var medevacBanners: some View {
+        ForEach(pendingMedevacs) { medevac in
+            MedevacNotificationBanner(
+                report: medevac,
+                onClick: {
+                    dismissMedevac(medevac.id)
+                    showingListReports = true
+                },
+                onDismiss: { dismissMedevac(medevac.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var orderBanners: some View {
+        ForEach(pendingOrders) { order in
+            OrderNotificationBanner(
+                order: order,
+                onClick: {
+                    dismissOrder(order.id)
+                    showingOrders = true
+                },
+                onDismiss: { dismissOrder(order.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var reportBanners: some View {
+        ForEach(pendingReports) { report in
+            ReportNotificationBanner(
+                report: report,
+                onClick: {
+                    dismissReport(report.id)
+                    showingListReports = true
+                },
+                onDismiss: { dismissReport(report.id) }
+            )
+        }
+    }
+
+    private var notificationBannersOverlay: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 8) {
+                    chatBanners
+                    methaneBanners
+                    medevacBanners
+                    orderBanners
+                    reportBanners
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            }
+            .frame(maxHeight: geometry.size.height * 0.6)
+            .padding(.top, geometry.safeAreaInsets.top + 100)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingChats.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMethanes.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMedevacs.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingOrders.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingReports.count)
+        }
+        .allowsHitTesting(hasPendingNotifications)
+    }
+
     // MARK: - Long-Press Context Menu Overlay
 
     private var longPressMenuOverlay: some View {
@@ -1125,17 +1823,9 @@ public struct MainView: View {
             coordinate: longPressCoordinate,
             coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
             onPinChosen: { pinType in
-                let pin = NatoPin(
-                    id: pinsVM.generatePinId(),
-                    latitude: longPressCoordinate.latitude,
-                    longitude: longPressCoordinate.longitude,
-                    type: pinType,
-                    title: "",
-                    description: "",
-                    authorCallsign: ContactsViewModel.shared.myProfile?.callsign ?? "Unknown",
-                    originDeviceId: TransportCoordinator.shared.deviceId
-                )
-                pinsVM.addPin(pin)
+                // Store the selected pin type and show the create dialog
+                pendingPinType = pinType
+                showingPinCreateDialog = true
             },
             onFormChosen: { formType in
                 switch formType {
@@ -1303,9 +1993,15 @@ struct MapViewRepresentable: UIViewRepresentable {
     @Binding var region: MKCoordinateRegion
     let followMode: Bool
     let myPosition: CLLocationCoordinate2D?
+    let myDeviceId: String
     let peerPositions: [PeerPosition]
+    let planningWaypoints: [CLLocationCoordinate2D]
+    let orientationMode: MapOrientationMode
+    let deviceHeading: Double?
     var onLongPress: ((CLLocationCoordinate2D, CGPoint) -> Void)?
+    var onTap: ((CLLocationCoordinate2D) -> Void)?
     var onPinSelected: ((NatoPin) -> Void)?
+    var onPeerSelected: ((String) -> Void)?
     var onUserLocationScreenUpdate: ((CGPoint?) -> Void)?
     var onUserDraggedMap: (() -> Void)?
     var onMapReady: ((MKMapView) -> Void)?
@@ -1322,7 +2018,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
-        mapView.showsCompass = true
+        mapView.showsCompass = false  // Using custom compass instead
         mapView.setRegion(region, animated: false)
 
         // Store reference for direct control
@@ -1338,6 +2034,14 @@ struct MapViewRepresentable: UIViewRepresentable {
         )
         longPressGesture.minimumPressDuration = 0.5
         mapView.addGestureRecognizer(longPressGesture)
+
+        // Add tap gesture recognizer for route planning
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTap(_:))
+        )
+        tapGesture.require(toFail: longPressGesture)
+        mapView.addGestureRecognizer(tapGesture)
 
         // Add pan gesture recognizer to detect user dragging
         let panGesture = UIPanGestureRecognizer(
@@ -1360,6 +2064,9 @@ struct MapViewRepresentable: UIViewRepresentable {
         // Update map type based on settings
         updateMapType(mapView)
 
+        // Update map orientation based on mode
+        updateMapOrientation(mapView, context: context)
+
         // Update peer annotations
         updatePeerAnnotations(mapView)
 
@@ -1368,6 +2075,9 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         // Update breadcrumb overlay
         updateBreadcrumbOverlay(mapView)
+
+        // Update planning overlay (waypoints and polyline)
+        updatePlanningOverlay(mapView)
 
         // Report user location screen position for crosshair line
         if let userLocation = mapView.userLocation.location?.coordinate {
@@ -1382,7 +2092,11 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         // Follow mode - continuously center on user position (keeping current zoom)
-        if followMode, let position = myPosition {
+        // Skip during orientation change to prevent zoom drift
+        let timeSinceOrientationChange = Date().timeIntervalSince(context.coordinator.lastOrientationChangeTime)
+        let isOrientationStable = timeSinceOrientationChange > 0.5
+
+        if followMode, let position = myPosition, isOrientationStable {
             let currentCenter = mapView.centerCoordinate
             let latDiff = abs(position.latitude - currentCenter.latitude)
             let lonDiff = abs(position.longitude - currentCenter.longitude)
@@ -1399,25 +2113,136 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.wasFollowing = followMode
     }
 
+    private func updateMapOrientation(_ mapView: MKMapView, context: Context) {
+        // Detect orientation change and immediately restore zoom to prevent drift
+        let currentBounds = mapView.bounds.size
+        let boundsChanged = abs(currentBounds.width - context.coordinator.lastBoundsSize.width) > 50 ||
+                           abs(currentBounds.height - context.coordinator.lastBoundsSize.height) > 50
+
+        if boundsChanged {
+            context.coordinator.lastBoundsSize = currentBounds
+            context.coordinator.lastOrientationChangeTime = Date()
+
+            // Immediately restore locked zoom to counteract MapKit's auto-adjustment
+            if let lockedZoom = context.coordinator.lockedZoomLevel {
+                context.coordinator.isProgrammaticRegionChange = true
+                let currentCamera = mapView.camera
+                let newCamera = MKMapCamera(
+                    lookingAtCenter: currentCamera.centerCoordinate,
+                    fromDistance: lockedZoom,
+                    pitch: currentCamera.pitch,
+                    heading: currentCamera.heading
+                )
+                mapView.setCamera(newCamera, animated: false)
+            }
+            return
+        }
+
+        // Skip heading updates for 0.3 seconds after orientation change
+        let timeSinceChange = Date().timeIntervalSince(context.coordinator.lastOrientationChangeTime)
+        if timeSinceChange < 0.3 {
+            return
+        }
+
+        // Update bounds tracking
+        context.coordinator.lastBoundsSize = currentBounds
+
+        switch orientationMode {
+        case .northUp:
+            // North-up: Lock map so north is always at top
+            mapView.isRotateEnabled = false
+            // Reset heading to 0 if it's not already
+            if abs(mapView.camera.heading) > 1 {
+                // Mark as programmatic so regionDidChangeAnimated doesn't update lockedZoomLevel
+                context.coordinator.isProgrammaticRegionChange = true
+
+                // Create new camera preserving all properties explicitly (like Android)
+                let currentCamera = mapView.camera
+                let zoomToUse = context.coordinator.lockedZoomLevel ?? currentCamera.centerCoordinateDistance
+                let newCamera = MKMapCamera(
+                    lookingAtCenter: currentCamera.centerCoordinate,
+                    fromDistance: zoomToUse,
+                    pitch: currentCamera.pitch,
+                    heading: 0
+                )
+                mapView.setCamera(newCamera, animated: true)
+            }
+
+        case .headingUp:
+            // Heading-up: Rotate map so current heading is always "up"
+            mapView.isRotateEnabled = false
+            if let heading = deviceHeading {
+                let targetHeading = heading
+                if abs(mapView.camera.heading - targetHeading) > 2 {
+                    // Use locked zoom level if available, otherwise initialize it
+                    let currentCamera = mapView.camera
+                    if context.coordinator.lockedZoomLevel == nil {
+                        context.coordinator.lockedZoomLevel = currentCamera.centerCoordinateDistance
+                    }
+                    let zoomToUse = context.coordinator.lockedZoomLevel ?? currentCamera.centerCoordinateDistance
+
+                    // Mark as programmatic so regionDidChangeAnimated doesn't update lockedZoomLevel
+                    context.coordinator.isProgrammaticRegionChange = true
+
+                    // Create new camera with locked zoom level (prevents drift)
+                    let newCamera = MKMapCamera(
+                        lookingAtCenter: currentCamera.centerCoordinate,
+                        fromDistance: zoomToUse,
+                        pitch: currentCamera.pitch,
+                        heading: targetHeading
+                    )
+                    mapView.setCamera(newCamera, animated: false)
+                }
+            }
+
+        case .freeRotate:
+            // Free rotate: Allow user to rotate the map freely
+            mapView.isRotateEnabled = true
+        }
+    }
+
+    // Track current map configuration to avoid unnecessary updates
+    private static var currentMapProvider: MapProvider?
+    private static var currentMapStyle: MapStyle?
+    private static var currentTileURL: String?
+
     private func updateMapType(_ mapView: MKMapView) {
+        let currentStyle = settingsVM.currentMapStyle
+        let mapProvider = settingsVM.mapProvider
+        let tileURLTemplate = settingsVM.mapTilerURL(for: currentStyle)
+
+        // Check if we need to update - skip if nothing changed
+        let needsMapTiler = mapProvider == .mapTiler && settingsVM.mapTilerSettings.isValid && tileURLTemplate != nil
+        let targetTileURL = needsMapTiler ? tileURLTemplate : nil
+
+        if MapViewRepresentable.currentMapProvider == mapProvider &&
+           MapViewRepresentable.currentMapStyle == currentStyle &&
+           MapViewRepresentable.currentTileURL == targetTileURL {
+            // No change needed
+            return
+        }
+
+        // Update tracking
+        MapViewRepresentable.currentMapProvider = mapProvider
+        MapViewRepresentable.currentMapStyle = currentStyle
+        MapViewRepresentable.currentTileURL = targetTileURL
+
         // Remove existing tile overlays
         let existingOverlays = mapView.overlays.filter { $0 is MKTileOverlay }
         mapView.removeOverlays(existingOverlays)
 
-        let currentStyle = settingsVM.currentMapStyle
-
-        // Check if MapTiler is configured for terrain/outdoor/topographic styles
-        if let tileURLTemplate = settingsVM.mapTilerURL(for: currentStyle) {
-            // Use MapTiler tiles
-            mapView.mapType = .standard  // Base layer
-            let tileOverlay = MKTileOverlay(urlTemplate: tileURLTemplate)
+        // Use MapTiler if selected and configured
+        if let tileURL = targetTileURL {
+            // Use MapTiler tiles - hide Apple Maps base layer
+            mapView.mapType = .mutedStandard
+            let tileOverlay = MKTileOverlay(urlTemplate: tileURL)
             tileOverlay.canReplaceMapContent = true
             tileOverlay.maximumZ = 19
             tileOverlay.minimumZ = 0
             mapView.addOverlay(tileOverlay, level: .aboveLabels)
             mapView.showsBuildings = false
         } else {
-            // Use Apple's native map types
+            // Use Apple Maps
             switch currentStyle {
             case .standard:
                 mapView.mapType = .standard
@@ -1502,6 +2327,46 @@ struct MapViewRepresentable: UIViewRepresentable {
                 mapView.addOverlay(polyline)
             }
         }
+
+        // Add visible planned routes
+        for route in RoutesViewModel.shared.visiblePlannedRoutes {
+            if route.waypoints.count >= 2 {
+                let coordinates = route.waypoints.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+                let polyline = SavedRoutePolyline(coordinates: coordinates, count: coordinates.count)
+                mapView.addOverlay(polyline)
+            }
+        }
+    }
+
+    private func updatePlanningOverlay(_ mapView: MKMapView) {
+        // Remove existing planning overlays and annotations
+        let existingOverlays = mapView.overlays.filter { $0 is PlanningRoutePolyline }
+        mapView.removeOverlays(existingOverlays)
+
+        let existingWaypoints = mapView.annotations.compactMap { $0 as? WaypointAnnotation }
+        mapView.removeAnnotations(existingWaypoints)
+
+        // Add planning waypoints if any
+        guard !planningWaypoints.isEmpty else { return }
+
+        // Add waypoint annotations
+        for (index, coordinate) in planningWaypoints.enumerated() {
+            let isFirst = index == 0
+            let isLast = index == planningWaypoints.count - 1
+            let annotation = WaypointAnnotation(
+                index: index,
+                coordinate: coordinate,
+                isFirst: isFirst,
+                isLast: isLast
+            )
+            mapView.addAnnotation(annotation)
+        }
+
+        // Add planning polyline if there are at least 2 waypoints
+        if planningWaypoints.count >= 2 {
+            let polyline = PlanningRoutePolyline(coordinates: planningWaypoints, count: planningWaypoints.count)
+            mapView.addOverlay(polyline)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -1512,6 +2377,9 @@ struct MapViewRepresentable: UIViewRepresentable {
         var parent: MapViewRepresentable
         var wasFollowing: Bool = false
         var isProgrammaticRegionChange: Bool = false
+        var lastBoundsSize: CGSize = .zero
+        var lastOrientationChangeTime: Date = .distantPast
+        var lockedZoomLevel: Double?  // User's intended zoom level, only updated on explicit zoom
 
         init(_ parent: MapViewRepresentable) {
             self.parent = parent
@@ -1534,6 +2402,16 @@ struct MapViewRepresentable: UIViewRepresentable {
             }
         }
 
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+
+            let mapView = gesture.view as! MKMapView
+            let screenPoint = gesture.location(in: mapView)
+            let coordinate = mapView.convert(screenPoint, toCoordinateFrom: mapView)
+
+            parent.onTap?(coordinate)
+        }
+
         // Allow pan gesture to work simultaneously with map's built-in gestures
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             return true
@@ -1545,30 +2423,157 @@ struct MapViewRepresentable: UIViewRepresentable {
                 return nil
             }
 
-            // Handle peer annotations
-            if let peerAnnotation = annotation as? PeerAnnotation {
-                let identifier = "PeerMarker"
-                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+            // Handle waypoint annotations for route planning
+            if let waypointAnnotation = annotation as? WaypointAnnotation {
+                let identifier = "WaypointMarker"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
 
                 if view == nil {
-                    view = MKMarkerAnnotationView(annotation: peerAnnotation, reuseIdentifier: identifier)
-                    view?.canShowCallout = true
+                    view = MKAnnotationView(annotation: waypointAnnotation, reuseIdentifier: identifier)
+                    view?.canShowCallout = false
                 } else {
-                    view?.annotation = peerAnnotation
+                    view?.annotation = waypointAnnotation
                 }
 
-                view?.markerTintColor = .systemBlue
-                view?.glyphImage = UIImage(systemName: "person.fill")
+                // Create waypoint marker image
+                let size: CGFloat = 28
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+                let image = renderer.image { ctx in
+                    let rect = CGRect(x: 0, y: 0, width: size, height: size)
+                    let color: UIColor
+                    if waypointAnnotation.isFirst {
+                        color = .systemGreen
+                    } else if waypointAnnotation.isLast {
+                        color = .systemRed
+                    } else {
+                        color = .systemCyan
+                    }
+
+                    // Draw circle background
+                    ctx.cgContext.setFillColor(color.cgColor)
+                    ctx.cgContext.fillEllipse(in: rect)
+
+                    // Draw border
+                    ctx.cgContext.setStrokeColor(UIColor.white.cgColor)
+                    ctx.cgContext.setLineWidth(2)
+                    ctx.cgContext.strokeEllipse(in: rect.insetBy(dx: 1, dy: 1))
+
+                    // Draw number or icon
+                    let textAttributes: [NSAttributedString.Key: Any] = [
+                        .font: UIFont.boldSystemFont(ofSize: 12),
+                        .foregroundColor: UIColor.white
+                    ]
+
+                    let text: String
+                    if waypointAnnotation.isFirst {
+                        text = "S"  // Start
+                    } else if waypointAnnotation.isLast {
+                        text = "E"  // End
+                    } else {
+                        text = "\(waypointAnnotation.index + 1)"
+                    }
+
+                    let textSize = text.size(withAttributes: textAttributes)
+                    let textRect = CGRect(
+                        x: (size - textSize.width) / 2,
+                        y: (size - textSize.height) / 2,
+                        width: textSize.width,
+                        height: textSize.height
+                    )
+                    text.draw(in: textRect, withAttributes: textAttributes)
+                }
+
+                view?.image = image
+                view?.centerOffset = CGPoint(x: 0, y: 0)
                 return view
             }
 
-            // Handle pin annotations
-            if let pinAnnotation = annotation as? PinAnnotation {
-                let identifier = "PinMarker"
-                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+            // Handle peer annotations - blue triangle for others, circle for self
+            if let peerAnnotation = annotation as? PeerAnnotation {
+                let isOwnDevice = peerAnnotation.peerId == parent.myDeviceId
+                let identifier = isOwnDevice ? "SelfMarker" : "PeerMarker"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
 
                 if view == nil {
-                    view = MKMarkerAnnotationView(annotation: pinAnnotation, reuseIdentifier: identifier)
+                    view = MKAnnotationView(annotation: peerAnnotation, reuseIdentifier: identifier)
+                    view?.canShowCallout = true
+                    // Add info button for profile details
+                    let infoButton = UIButton(type: .detailDisclosure)
+                    view?.rightCalloutAccessoryView = infoButton
+                } else {
+                    view?.annotation = peerAnnotation
+                    // Remove old label if exists
+                    view?.subviews.forEach { if $0.tag == 999 { $0.removeFromSuperview() } }
+                }
+
+                // Create callsign label
+                let label = UILabel()
+                label.text = peerAnnotation.callsign
+                label.font = UIFont.systemFont(ofSize: 10, weight: .medium)
+                label.textColor = .white
+                label.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+                label.textAlignment = .center
+                label.layer.cornerRadius = 3
+                label.clipsToBounds = true
+                label.tag = 999
+                label.sizeToFit()
+                label.frame.size.width += 6  // Add padding
+
+                if isOwnDevice {
+                    // Create blue circle for own position
+                    let markerSize = CGSize(width: 24, height: 24)
+                    let renderer = UIGraphicsImageRenderer(size: markerSize)
+                    let circleImage = renderer.image { context in
+                        let rect = CGRect(origin: .zero, size: markerSize).insetBy(dx: 2, dy: 2)
+                        let path = UIBezierPath(ovalIn: rect)
+                        UIColor.systemBlue.setFill()
+                        path.fill()
+                        UIColor.white.setStroke()
+                        path.lineWidth = 2
+                        path.stroke()
+                    }
+                    view?.image = circleImage
+                    view?.centerOffset = CGPoint(x: 0, y: 0)
+
+                    // Position label beneath circle
+                    label.frame.origin = CGPoint(
+                        x: (markerSize.width - label.frame.width) / 2,
+                        y: markerSize.height / 2 + 2
+                    )
+                } else {
+                    // Create blue triangle image pointing down (10% smaller: 28 -> 25)
+                    let markerSize = CGSize(width: 25, height: 25)
+                    let renderer = UIGraphicsImageRenderer(size: markerSize)
+                    let triangleImage = renderer.image { context in
+                        let path = UIBezierPath()
+                        path.move(to: CGPoint(x: markerSize.width / 2, y: markerSize.height))  // Bottom center (point)
+                        path.addLine(to: CGPoint(x: 0, y: 0))  // Top left
+                        path.addLine(to: CGPoint(x: markerSize.width, y: 0))  // Top right
+                        path.close()
+                        UIColor.systemBlue.setFill()
+                        path.fill()
+                    }
+                    view?.image = triangleImage
+                    view?.centerOffset = CGPoint(x: 0, y: -markerSize.height / 2)
+
+                    // Position label beneath triangle (triangle points down)
+                    label.frame.origin = CGPoint(
+                        x: (markerSize.width - label.frame.width) / 2,
+                        y: markerSize.height + 2
+                    )
+                }
+
+                view?.addSubview(label)
+                return view
+            }
+
+            // Handle pin annotations - use circular markers like Android
+            if let pinAnnotation = annotation as? PinAnnotation {
+                let identifier = "PinMarker_\(pinAnnotation.pinType.rawValue)"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+
+                if view == nil {
+                    view = MKAnnotationView(annotation: pinAnnotation, reuseIdentifier: identifier)
                     view?.canShowCallout = true
                     // Add info button for View/Edit/Delete options
                     let infoButton = UIButton(type: .detailDisclosure)
@@ -1577,8 +2582,9 @@ struct MapViewRepresentable: UIViewRepresentable {
                     view?.annotation = pinAnnotation
                 }
 
-                view?.markerTintColor = pinAnnotation.markerColor
-                view?.glyphImage = UIImage(systemName: pinAnnotation.glyphName)
+                // Use circular marker matching Android style
+                view?.image = PinMarkerImageCache.shared.image(for: pinAnnotation.pinType)
+                view?.centerOffset = CGPoint(x: 0, y: 0)  // Center on coordinate
                 return view
             }
 
@@ -1586,6 +2592,13 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, calloutAccessoryControlTapped control: UIControl) {
+            // Handle peer annotation info button tap
+            if let peerAnnotation = view.annotation as? PeerAnnotation {
+                parent.onPeerSelected?(peerAnnotation.peerId)
+                return
+            }
+
+            // Handle pin annotation info button tap
             guard let pinAnnotation = view.annotation as? PinAnnotation else { return }
 
             // Find the pin and call the selection callback
@@ -1624,6 +2637,15 @@ struct MapViewRepresentable: UIViewRepresentable {
                 return renderer
             }
 
+            // Handle planning route polyline overlays
+            if let polyline = overlay as? PlanningRoutePolyline {
+                let renderer = MKPolylineRenderer(polyline: polyline)
+                renderer.strokeColor = UIColor.systemCyan
+                renderer.lineWidth = 4
+                renderer.lineDashPattern = [8, 4]  // Dashed line for planning
+                return renderer
+            }
+
             // Handle any other polyline overlays
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
@@ -1643,6 +2665,9 @@ struct MapViewRepresentable: UIViewRepresentable {
             }
             // Update region binding only for user-initiated changes
             parent.region = mapView.region
+
+            // Save user's intended zoom level (only on user-initiated changes)
+            lockedZoomLevel = mapView.camera.centerCoordinateDistance
         }
     }
 }
@@ -1651,15 +2676,19 @@ struct MapViewRepresentable: UIViewRepresentable {
 
 class PeerAnnotation: NSObject, MKAnnotation {
     let peerId: String
+    let callsign: String
     dynamic var coordinate: CLLocationCoordinate2D
     let title: String?
     let subtitle: String?
 
     init(peer: PeerPosition) {
         self.peerId = peer.deviceId
+        self.callsign = peer.callsign
         self.coordinate = peer.coordinate
+        // Title = callsign, subtitle = nickname (looked up from contacts)
         self.title = peer.callsign
-        self.subtitle = nil
+        let contact = ContactsViewModel.shared.contacts.first { $0.deviceId == peer.deviceId }
+        self.subtitle = contact?.nickname
     }
 }
 
@@ -1712,6 +2741,665 @@ class SavedRoutePolyline: MKPolyline {}
 
 /// Polyline for crosshair-to-position line
 class CrosshairLinePolyline: MKPolyline {}
+
+/// Polyline for route planning
+class PlanningRoutePolyline: MKPolyline {}
+
+/// Annotation for planning waypoints
+class WaypointAnnotation: NSObject, MKAnnotation {
+    let index: Int
+    let isFirst: Bool
+    let isLast: Bool
+    dynamic var coordinate: CLLocationCoordinate2D
+
+    init(index: Int, coordinate: CLLocationCoordinate2D, isFirst: Bool, isLast: Bool) {
+        self.index = index
+        self.coordinate = coordinate
+        self.isFirst = isFirst
+        self.isLast = isLast
+    }
+}
+
+// MARK: - Image Document for File Export
+
+struct ImageDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.jpeg, .png] }
+
+    var imageData: Data
+    var filename: String
+
+    init(imageData: Data, filename: String) {
+        self.imageData = imageData
+        self.filename = filename
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        self.imageData = data
+        self.filename = "image.jpg"
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: imageData)
+    }
+}
+
+// MARK: - Combined Reports List View
+
+/// Wrapper type for unified report list
+enum CombinedReportItem: Identifiable {
+    case pedars(Report)
+    case mist(MedevacReport)
+
+    var id: String {
+        switch self {
+        case .pedars(let report): return "pedars-\(report.id)"
+        case .mist(let report): return "mist-\(report.id)"
+        }
+    }
+
+    var createdAtMillis: Int64 {
+        switch self {
+        case .pedars(let report): return report.createdAtMillis
+        case .mist(let report): return report.createdAtMillis
+        }
+    }
+
+    var direction: ReportDirection {
+        switch self {
+        case .pedars(let report): return report.direction
+        case .mist(let report): return report.direction == .incoming ? .incoming : .outgoing
+        }
+    }
+
+    var isRead: Bool {
+        switch self {
+        case .pedars(let report): return report.isRead
+        case .mist(let report): return report.isRead
+        }
+    }
+
+    var typeLabel: String {
+        switch self {
+        case .pedars: return "PEDARS"
+        case .mist: return "MIST"
+        }
+    }
+
+    var typeColor: Color {
+        switch self {
+        case .pedars: return .blue
+        case .mist: return .orange
+        }
+    }
+}
+
+/// Combined view showing both PEDARS and MIST reports with Incoming/Outgoing tabs
+struct CombinedReportsListView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var reportsVM = ReportsViewModel.shared
+    @ObservedObject private var medevacVM = MedevacViewModel.shared
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
+
+    @State private var selectedTab = 0
+    @State private var selectedPedarsReport: Report?
+    @State private var selectedMistReport: MedevacReport?
+    @State private var showingCreatePedars = false
+    @State private var showingCreateMist = false
+    @State private var showingCreateMenu = false
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd/MM HH:mm"
+        return formatter
+    }
+
+    // Combine all reports
+    private var allIncomingReports: [CombinedReportItem] {
+        let pedars = reportsVM.incomingReports.map { CombinedReportItem.pedars($0) }
+        let mist = medevacVM.incomingReports.map { CombinedReportItem.mist($0) }
+        return (pedars + mist).sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    private var allOutgoingReports: [CombinedReportItem] {
+        let pedars = reportsVM.outgoingReports.map { CombinedReportItem.pedars($0) }
+        let mist = medevacVM.outgoingReports.map { CombinedReportItem.mist($0) }
+        return (pedars + mist).sorted { $0.createdAtMillis > $1.createdAtMillis }
+    }
+
+    private var unreadCount: Int {
+        reportsVM.unreadIncomingCount + medevacVM.unreadIncomingCount
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Incoming/Outgoing tabs
+                Picker("Direction", selection: $selectedTab) {
+                    HStack {
+                        Text("Incoming (\(allIncomingReports.count))")
+                        if unreadCount > 0 {
+                            Circle()
+                                .fill(.red)
+                                .frame(width: 8, height: 8)
+                        }
+                    }
+                    .tag(0)
+
+                    Text("Outgoing (\(allOutgoingReports.count))")
+                        .tag(1)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+
+                // Content
+                if selectedTab == 0 {
+                    incomingList
+                } else {
+                    outgoingList
+                }
+            }
+            .navigationTitle("Reports")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            showingCreatePedars = true
+                        } label: {
+                            Label("PEDARS Report", systemImage: "doc.text")
+                        }
+
+                        Button {
+                            showingCreateMist = true
+                        } label: {
+                            Label("MIST Report", systemImage: "cross.case")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $selectedPedarsReport) { report in
+                ReportDetailScreen(report: report)
+            }
+            .sheet(item: $selectedMistReport) { report in
+                MedevacDetailScreen(report: report)
+            }
+            .sheet(isPresented: $showingCreatePedars) {
+                CreateReportScreen()
+            }
+            .sheet(isPresented: $showingCreateMist) {
+                CreateMedevacScreen()
+            }
+        }
+    }
+
+    private var incomingList: some View {
+        Group {
+            if allIncomingReports.isEmpty {
+                emptyState(
+                    icon: "doc.text",
+                    title: "No incoming reports",
+                    subtitle: "Reports sent to you will appear here."
+                )
+            } else {
+                List {
+                    ForEach(allIncomingReports) { item in
+                        CombinedReportRow(item: item, dateFormatter: dateFormatter, statuses: nil)
+                            .onTapGesture {
+                                switch item {
+                                case .pedars(let report):
+                                    reportsVM.markAsRead(reportId: report.id)
+                                    selectedPedarsReport = report
+                                case .mist(let report):
+                                    medevacVM.markAsRead(reportId: report.id)
+                                    selectedMistReport = report
+                                }
+                            }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let item = allIncomingReports[index]
+                            switch item {
+                            case .pedars(let report):
+                                reportsVM.deleteReport(reportId: report.id)
+                            case .mist(let report):
+                                medevacVM.deleteReport(reportId: report.id)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private var outgoingList: some View {
+        Group {
+            if allOutgoingReports.isEmpty {
+                emptyState(
+                    icon: "paperplane",
+                    title: "No outgoing reports",
+                    subtitle: "Reports you send will appear here."
+                )
+            } else {
+                List {
+                    ForEach(allOutgoingReports) { item in
+                        CombinedReportRow(
+                            item: item,
+                            dateFormatter: dateFormatter,
+                            statuses: getStatuses(for: item)
+                        )
+                        .onTapGesture {
+                            switch item {
+                            case .pedars(let report):
+                                selectedPedarsReport = report
+                            case .mist(let report):
+                                selectedMistReport = report
+                            }
+                        }
+                    }
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let item = allOutgoingReports[index]
+                            switch item {
+                            case .pedars(let report):
+                                reportsVM.deleteReport(reportId: report.id)
+                            case .mist(let report):
+                                medevacVM.deleteReport(reportId: report.id)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private func getStatuses(for item: CombinedReportItem) -> (delivered: Int, read: Int, total: Int)? {
+        switch item {
+        case .pedars(let report):
+            let statuses = reportsVM.getStatusesForReport(reportId: report.id)
+            return (
+                delivered: statuses.filter { $0.isDelivered }.count,
+                read: statuses.filter { $0.isRead }.count,
+                total: report.recipientDeviceIds.count
+            )
+        case .mist(let report):
+            let statuses = medevacVM.getStatusesForReport(reportId: report.id)
+            return (
+                delivered: statuses.filter { $0.isDelivered }.count,
+                read: statuses.filter { $0.isRead }.count,
+                total: report.recipientDeviceIds.count
+            )
+        }
+    }
+
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundColor(.secondary)
+
+            Text(title)
+                .font(.headline)
+
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+}
+
+// MARK: - Combined Report Row
+
+private struct CombinedReportRow: View {
+    let item: CombinedReportItem
+    let dateFormatter: DateFormatter
+    let statuses: (delivered: Int, read: Int, total: Int)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Unread indicator
+            if item.direction == .incoming && !item.isRead {
+                Circle()
+                    .fill(.blue)
+                    .frame(width: 8, height: 8)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    // Type badge
+                    Text(item.typeLabel)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(item.typeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(item.typeColor.opacity(0.15))
+                        .cornerRadius(4)
+
+                    // Status badge (for PEDARS)
+                    if case .pedars(let report) = item {
+                        Text(report.readiness.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(report.readiness.color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(report.readiness.color.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+
+                    // Priority badge (for MIST)
+                    if case .mist(let report) = item {
+                        Text(report.priority.rawValue)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(report.priority.color)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(report.priority.color.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+
+                    Spacer()
+
+                    Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(item.createdAtMillis) / 1000)))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // Sender/recipient info
+                switch item {
+                case .pedars(let report):
+                    if report.direction == .incoming {
+                        Text("From: \(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)")
+                            .font(.subheadline)
+                    } else if let statuses = statuses {
+                        Text("To: \(statuses.total) recipient\(statuses.total == 1 ? "" : "s")")
+                            .font(.subheadline)
+                        if statuses.total > 0 {
+                            Text("Delivered: \(statuses.delivered), Read: \(statuses.read)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                case .mist(let report):
+                    if report.direction == .incoming {
+                        Text("Patient: \(report.soldierName) - From: \(report.senderCallsign.isEmpty ? String(report.senderDeviceId.prefix(8)) : report.senderCallsign)")
+                            .font(.subheadline)
+                    } else if let statuses = statuses {
+                        Text("Patient: \(report.soldierName) - To: \(statuses.total) recipient\(statuses.total == 1 ? "" : "s")")
+                            .font(.subheadline)
+                        if statuses.total > 0 {
+                            Text("Delivered: \(statuses.delivered), Read: \(statuses.read)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Peer Detail Sheet View
+
+struct PeerDetailSheetView: View {
+    let peer: PeerPosition
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
+
+    @State private var showingFullProfile = false
+
+    private var contact: ContactProfile? {
+        contactsVM.contacts.first { $0.deviceId == peer.deviceId }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Identity") {
+                    HStack {
+                        Text("Callsign")
+                        Spacer()
+                        Text(peer.callsign)
+                    }
+
+                    if let nickname = contact?.nickname, !nickname.isEmpty {
+                        HStack {
+                            Text("Nickname")
+                            Spacer()
+                            Text(nickname)
+                        }
+                    }
+                }
+
+                Section("Location") {
+                    HStack {
+                        Text("Coordinates")
+                        Spacer()
+                        Text(CoordinateFormatter.format(
+                            latitude: peer.latitude,
+                            longitude: peer.longitude,
+                            format: settingsVM.settings.coordFormat
+                        ))
+                        .font(.system(.body, design: .monospaced))
+                    }
+
+                    HStack {
+                        Text("Last Seen")
+                        Spacer()
+                        Text(formatDate(peer.lastUpdated))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section {
+                    Button {
+                        showingFullProfile = true
+                    } label: {
+                        HStack {
+                            Label("View Full Profile", systemImage: "info.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(peer.callsign)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .sheet(isPresented: $showingFullProfile) {
+                PeerFullProfileSheetView(peer: peer)
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Peer Full Profile Sheet View
+
+struct PeerFullProfileSheetView: View {
+    let peer: PeerPosition
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var contactsVM = ContactsViewModel.shared
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
+
+    private var contact: ContactProfile? {
+        contactsVM.contacts.first { $0.deviceId == peer.deviceId }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Identity") {
+                    HStack {
+                        Text("Callsign")
+                        Spacer()
+                        Text(peer.callsign)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let nickname = contact?.nickname, !nickname.isEmpty {
+                        HStack {
+                            Text("Nickname")
+                            Spacer()
+                            Text(nickname)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let fullName = contact?.fullName {
+                        HStack {
+                            Text("Name")
+                            Spacer()
+                            Text(fullName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                if contact?.company != nil || contact?.platoon != nil || contact?.squad != nil {
+                    Section("Unit") {
+                        if let company = contact?.company {
+                            HStack {
+                                Text("Company")
+                                Spacer()
+                                Text(company)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let platoon = contact?.platoon {
+                            HStack {
+                                Text("Platoon/Troop")
+                                Spacer()
+                                Text(platoon)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let squad = contact?.squad {
+                            HStack {
+                                Text("Squad")
+                                Spacer()
+                                Text(squad)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                if let role = contact?.role, role != .none {
+                    Section("Role") {
+                        HStack {
+                            Text("Position")
+                            Spacer()
+                            Text(role.displayName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                if contact?.mobile != nil || contact?.email != nil {
+                    Section("Contact") {
+                        if let mobile = contact?.mobile {
+                            HStack {
+                                Text("Phone")
+                                Spacer()
+                                Text(mobile)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if let email = contact?.email {
+                            HStack {
+                                Text("Email")
+                                Spacer()
+                                Text(email)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Location") {
+                    HStack {
+                        Text("Coordinates")
+                        Spacer()
+                        Text(CoordinateFormatter.format(
+                            latitude: peer.latitude,
+                            longitude: peer.longitude,
+                            format: settingsVM.settings.coordFormat
+                        ))
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Last Updated")
+                        Spacer()
+                        Text(formatDate(peer.lastUpdated))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section("Device") {
+                    HStack {
+                        Text("Device ID")
+                        Spacer()
+                        Text(String(peer.deviceId.prefix(12)) + "...")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Full Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .medium
+        return formatter.string(from: date)
+    }
+}
 
 // MARK: - Preview
 

@@ -7,8 +7,7 @@ public struct MethaneListScreen: View {
     @ObservedObject private var methaneVM = MethaneViewModel.shared
 
     @State private var selectedTab = 0
-    @State private var selectedRequest: MethaneRequest?
-    @State private var showingDetail = false
+    @State private var detailRequest: MethaneRequest?
     @State private var showingCreate = false
 
     public init() {}
@@ -58,10 +57,8 @@ public struct MethaneListScreen: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingDetail) {
-                if let request = selectedRequest {
-                    MethaneDetailScreen(request: request)
-                }
+            .sheet(item: $detailRequest) { request in
+                MethaneDetailScreen(request: request)
             }
             .sheet(isPresented: $showingCreate) {
                 CreateMethaneScreen()
@@ -83,8 +80,7 @@ public struct MethaneListScreen: View {
                         MethaneListRow(request: request, statuses: [])
                             .onTapGesture {
                                 methaneVM.markAsRead(requestId: request.id)
-                                selectedRequest = request
-                                showingDetail = true
+                                detailRequest = request
                             }
                     }
                     .onDelete { indexSet in
@@ -113,8 +109,7 @@ public struct MethaneListScreen: View {
                         let statuses = methaneVM.getStatusesForRequest(requestId: request.id)
                         MethaneListRow(request: request, statuses: statuses)
                             .onTapGesture {
-                                selectedRequest = request
-                                showingDetail = true
+                                detailRequest = request
                             }
                     }
                     .onDelete { indexSet in

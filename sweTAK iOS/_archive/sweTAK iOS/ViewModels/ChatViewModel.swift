@@ -33,6 +33,13 @@ public final class ChatViewModel: ObservableObject {
     @Published public private(set) var threads: [String: [ChatMessage]] = [:]
     @Published public private(set) var unreadCounts: [String: Int] = [:]
 
+    // MARK: - Notification Publisher
+
+    private let incomingNotificationSubject = PassthroughSubject<IncomingChatNotification, Never>()
+    public var incomingNotification: AnyPublisher<IncomingChatNotification, Never> {
+        incomingNotificationSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - Current Thread
 
     private var currentThreadId: String?
@@ -233,7 +240,18 @@ public final class ChatViewModel: ObservableObject {
                 // Increment unread count
                 unreadCounts[effectiveThreadId] = (unreadCounts[effectiveThreadId] ?? 0) + 1
                 saveUnreadCounts()
-                logger.info("addIncomingMessage: Not current thread, incremented unread count")
+
+                // Emit notification for UI display
+                let contact = ContactsViewModel.shared.getContact(byDeviceId: message.fromDeviceId)
+                let notification = IncomingChatNotification(
+                    threadId: effectiveThreadId,
+                    fromDeviceId: message.fromDeviceId,
+                    textPreview: String(message.text.prefix(100)),
+                    callsign: contact?.callsign ?? message.fromDeviceId,
+                    nickname: contact?.nickname
+                )
+                incomingNotificationSubject.send(notification)
+                logger.info("addIncomingMessage: Not current thread, emitted notification for \(effectiveThreadId)")
             }
 
             logger.debug("Added incoming message from \(message.fromDeviceId)")

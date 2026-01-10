@@ -225,7 +225,21 @@ public struct ChatRecipientPicker: View {
     }
 
     private var sortedContacts: [ContactProfile] {
-        contactsVM.contacts.sorted { a, b in
+        // Deduplicate by callsign+nickname combination, keeping the most recently seen
+        var uniqueContacts: [String: ContactProfile] = [:]
+        for contact in contactsVM.contacts {
+            let key = "\(contact.callsign ?? "")|\(contact.nickname ?? "")"
+            if let existing = uniqueContacts[key] {
+                // Keep the one with the most recent lastSeenMs
+                if (contact.lastSeenMs ?? 0) > (existing.lastSeenMs ?? 0) {
+                    uniqueContacts[key] = contact
+                }
+            } else {
+                uniqueContacts[key] = contact
+            }
+        }
+
+        return uniqueContacts.values.sorted { a, b in
             let aName = (a.callsign ?? a.nickname ?? "Unknown").lowercased()
             let bName = (b.callsign ?? b.nickname ?? "Unknown").lowercased()
             return aName < bName
@@ -408,9 +422,29 @@ public struct ChatThreadsScreen: View {
 
     private var availableContacts: [ContactProfile] {
         let myDeviceId = TransportCoordinator.shared.deviceId
-        return contactsVM.contacts
-            .filter { $0.deviceId != myDeviceId && !contactsVM.isBlocked($0.deviceId) }
-            .sorted { ($0.callsign ?? "").lowercased() < ($1.callsign ?? "").lowercased() }
+
+        // Filter out self and blocked contacts
+        let filtered = contactsVM.contacts.filter {
+            $0.deviceId != myDeviceId && !contactsVM.isBlocked($0.deviceId)
+        }
+
+        // Deduplicate by callsign+nickname combination, keeping the most recently seen
+        var uniqueContacts: [String: ContactProfile] = [:]
+        for contact in filtered {
+            let key = "\(contact.callsign ?? "")|\(contact.nickname ?? "")"
+            if let existing = uniqueContacts[key] {
+                // Keep the one with the most recent lastSeenMs
+                if (contact.lastSeenMs ?? 0) > (existing.lastSeenMs ?? 0) {
+                    uniqueContacts[key] = contact
+                }
+            } else {
+                uniqueContacts[key] = contact
+            }
+        }
+
+        return uniqueContacts.values.sorted {
+            ($0.callsign ?? "").lowercased() < ($1.callsign ?? "").lowercased()
+        }
     }
 }
 

@@ -20,6 +20,10 @@ public struct MainView: View {
     // Sheet presentation state
     @State private var showingContacts = false
     @State private var showingChat = false
+    @State private var showingDirectChat = false
+    @State private var directChatThreadId: String = ""
+    @State private var directChatCallsign: String = ""
+    @State private var directChatNickname: String? = nil
     @State private var showingSettings = false
     @State private var showingOrders = false
     @State private var showingProfile = false
@@ -99,6 +103,7 @@ public struct MainView: View {
     @State private var exportDocument: ImageDocument? = nil
 
     // Notification banner state
+    @State private var pendingChats: [IncomingChatNotification] = []
     @State private var pendingReports: [Report] = []
     @State private var pendingMedevacs: [MedevacReport] = []
     @State private var pendingMethanes: [MethaneRequest] = []
@@ -331,6 +336,13 @@ public struct MainView: View {
         .sheet(isPresented: $showingChat) {
             ChatThreadsScreen()
         }
+        .sheet(isPresented: $showingDirectChat) {
+            ChatScreen(
+                threadId: directChatThreadId,
+                peerCallsign: directChatCallsign,
+                peerNickname: directChatNickname
+            )
+        }
         .sheet(isPresented: $showingSettings) {
             SettingsScreen()
         }
@@ -561,6 +573,11 @@ public struct MainView: View {
         .onReceive(ordersVM.incomingNotification) { order in
             if !pendingOrders.contains(where: { $0.id == order.id }) {
                 withAnimation { pendingOrders.append(order) }
+            }
+        }
+        .onReceive(chatVM.incomingNotification) { notification in
+            if !pendingChats.contains(where: { $0.threadId == notification.threadId }) {
+                withAnimation { pendingChats.append(notification) }
             }
         }
     }
@@ -1453,7 +1470,11 @@ public struct MainView: View {
     // MARK: - Notification Banners Overlay
 
     private var hasPendingNotifications: Bool {
-        !pendingMethanes.isEmpty || !pendingMedevacs.isEmpty || !pendingOrders.isEmpty || !pendingReports.isEmpty
+        !pendingChats.isEmpty || !pendingMethanes.isEmpty || !pendingMedevacs.isEmpty || !pendingOrders.isEmpty || !pendingReports.isEmpty
+    }
+
+    private func dismissChat(_ threadId: String) {
+        withAnimation { pendingChats.removeAll { $0.threadId == threadId } }
     }
 
     private func dismissMethane(_ id: String) {
@@ -1470,6 +1491,23 @@ public struct MainView: View {
 
     private func dismissReport(_ id: String) {
         withAnimation { pendingReports.removeAll { $0.id == id } }
+    }
+
+    @ViewBuilder
+    private var chatBanners: some View {
+        ForEach(pendingChats, id: \.threadId) { notification in
+            ChatNotificationBanner(
+                notification: notification,
+                onTap: {
+                    dismissChat(notification.threadId)
+                    directChatThreadId = notification.threadId
+                    directChatCallsign = notification.callsign
+                    directChatNickname = notification.nickname
+                    showingDirectChat = true
+                },
+                onDismiss: { dismissChat(notification.threadId) }
+            )
+        }
     }
 
     @ViewBuilder
@@ -1532,6 +1570,7 @@ public struct MainView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 8) {
+                    chatBanners
                     methaneBanners
                     medevacBanners
                     orderBanners
@@ -1542,6 +1581,7 @@ public struct MainView: View {
             }
             .frame(maxHeight: geometry.size.height * 0.6)
             .padding(.top, geometry.safeAreaInsets.top + 100)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingChats.count)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMethanes.count)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingMedevacs.count)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingOrders.count)

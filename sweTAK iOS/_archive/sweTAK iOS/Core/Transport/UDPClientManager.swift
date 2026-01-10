@@ -471,6 +471,14 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         let toDeviceId = json["toDeviceId"] as? String ?? ""
         let timestamp = json["ts"] as? Int64 ?? Date.currentMillis
 
+        // Check if this message is for us (or broadcast)
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        let isForUs = toDeviceId == myDeviceId || toDeviceId.isEmpty
+        if !isForUs {
+            logger.debug("Chat message not for us (to: \(toDeviceId), me: \(myDeviceId)), ignoring")
+            return
+        }
+
         let message = ChatMessage(
             threadId: threadId,
             fromDeviceId: fromDeviceId,
@@ -487,7 +495,6 @@ public final class UDPClientManager: NSObject, TransportProtocol, ObservableObje
         }
 
         // Auto-send ACK
-        let myDeviceId = TransportCoordinator.shared.deviceId
         if !myDeviceId.isEmpty && fromDeviceId != myDeviceId {
             sendChatAck(threadId: threadId, fromDeviceId: myDeviceId, toDeviceId: fromDeviceId, timestamp: timestamp)
         }

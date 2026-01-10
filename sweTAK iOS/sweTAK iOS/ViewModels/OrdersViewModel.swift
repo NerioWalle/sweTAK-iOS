@@ -165,6 +165,16 @@ public final class OrdersViewModel: ObservableObject {
         orders.first { $0.id == orderId }
     }
 
+    /// Delete an order
+    public func deleteOrder(_ order: Order) {
+        orders.removeAll { $0.id == order.id }
+        recipientStatuses.removeAll { $0.orderId == order.id }
+        saveOrders()
+        saveRecipientStatuses()
+
+        logger.debug("Deleted order: \(order.id)")
+    }
+
     // MARK: - Computed Properties
 
     /// Incoming orders (received, not sent by us)

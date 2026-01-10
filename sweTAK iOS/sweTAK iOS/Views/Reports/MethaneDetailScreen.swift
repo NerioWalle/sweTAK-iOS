@@ -6,8 +6,10 @@ import MapKit
 public struct MethaneDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var methaneVM = MethaneViewModel.shared
+    @ObservedObject private var settingsVM = SettingsViewModel.shared
 
     let request: MethaneRequest
+    @State private var showingDuplicate = false
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -22,205 +24,241 @@ public struct MethaneDetailScreen: View {
 
     public var body: some View {
         NavigationStack {
-            List {
-                // Header section
-                Section {
-                    IncidentTypeBadge(incidentType: request.incidentType)
+            VStack(spacing: 0) {
+                List {
+                    // Header section
+                    Section {
+                        IncidentTypeBadge(incidentType: request.incidentType)
+                            .padding(.vertical, 4)
+
+                        HStack {
+                            Text("Created")
+                            Spacer()
+                            Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(request.createdAtMillis) / 1000)))
+                                .foregroundColor(.secondary)
+                        }
+
+                        if request.direction == .incoming {
+                            HStack {
+                                Text("From")
+                                Spacer()
+                                Text(request.senderCallsign.isEmpty ? String(request.senderDeviceId.prefix(8)) : request.senderCallsign)
+                                    .foregroundColor(.secondary)
+                            }
+                        } else {
+                            let statuses = methaneVM.getStatusesForRequest(requestId: request.id)
+                            HStack {
+                                Text("Recipients")
+                                Spacer()
+                                Text("\(request.recipientDeviceIds.count)")
+                                    .foregroundColor(.secondary)
+                            }
+
+                            let deliveredCount = statuses.filter { $0.isDelivered }.count
+                            let readCount = statuses.filter { $0.isRead }.count
+
+                            HStack {
+                                Text("Status")
+                                Spacer()
+                                Text("Delivered: \(deliveredCount), Read: \(readCount)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    // M - Military Details
+                    Section {
+                        DetailRow(label: "Callsign", value: request.callsign)
+                        DetailRow(label: "Unit", value: request.unit)
+                    } header: {
+                        SectionHeader(letter: "M", title: "MILITARY DETAILS")
+                    }
+
+                    // E - Exact Location
+                    Section {
+                        if !request.incidentLocation.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Location Description")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(request.incidentLocation)
+                            }
+                        }
+
+                        if let lat = request.incidentLatitude, let lon = request.incidentLongitude {
+                            HStack {
+                                Text("Coordinates")
+                                Spacer()
+                                Text(CoordinateFormatter.format(
+                                    latitude: lat,
+                                    longitude: lon,
+                                    format: settingsVM.settings.coordFormat
+                                ))
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+
+                            // Mini map preview
+                            Map(position: .constant(MapCameraPosition.region(MKCoordinateRegion(
+                                center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                            )))) {
+                                Marker("Incident", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+                            }
+                            .frame(height: 150)
+                            .cornerRadius(8)
+                        }
+                    } header: {
+                        SectionHeader(letter: "E", title: "EXACT LOCATION")
+                    }
+
+                    // T - Time and Type
+                    Section {
+                        DetailRow(label: "Time", value: request.incidentTime)
+                        DetailRow(label: "Type", value: request.incidentType)
+                    } header: {
+                        SectionHeader(letter: "T", title: "TIME AND TYPE")
+                    }
+
+                    // H - Hazards
+                    if !request.hazards.isEmpty {
+                        Section {
+                            Text(request.hazards)
+                        } header: {
+                            SectionHeader(letter: "H", title: "HAZARDS")
+                        }
+                    }
+
+                    // A - Approach Routes
+                    Section {
+                        if !request.approachRoutes.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Approach Routes")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(request.approachRoutes)
+                            }
+                        }
+
+                        if !request.hlsLocation.isEmpty {
+                            DetailRow(label: "HLS Location", value: request.hlsLocation)
+                        }
+
+                        if let hlsLat = request.hlsLatitude, let hlsLon = request.hlsLongitude {
+                            HStack {
+                                Text("HLS Coordinates")
+                                Spacer()
+                                Text(CoordinateFormatter.format(
+                                    latitude: hlsLat,
+                                    longitude: hlsLon,
+                                    format: settingsVM.settings.coordFormat
+                                ))
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } header: {
+                        SectionHeader(letter: "A", title: "APPROACH ROUTES & HLS")
+                    }
+
+                    // N - Casualties
+                    Section {
+                        HStack(spacing: 16) {
+                            CasualtyBadge(label: "P1", count: request.casualtyCountP1, color: .red)
+                            CasualtyBadge(label: "P2", count: request.casualtyCountP2, color: .yellow)
+                            CasualtyBadge(label: "P3", count: request.casualtyCountP3, color: .green)
+                            CasualtyBadge(label: "KIA", count: request.casualtyCountDeceased, color: .gray)
+                        }
                         .padding(.vertical, 4)
 
-                    HStack {
-                        Text("Created")
-                        Spacer()
-                        Text(dateFormatter.string(from: Date(timeIntervalSince1970: Double(request.createdAtMillis) / 1000)))
-                            .foregroundColor(.secondary)
-                    }
-
-                    if request.direction == .incoming {
                         HStack {
-                            Text("From")
+                            Text("Total")
                             Spacer()
-                            Text(request.senderCallsign.isEmpty ? String(request.senderDeviceId.prefix(8)) : request.senderCallsign)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        let statuses = methaneVM.getStatusesForRequest(requestId: request.id)
-                        HStack {
-                            Text("Recipients")
-                            Spacer()
-                            Text("\(request.recipientDeviceIds.count)")
-                                .foregroundColor(.secondary)
+                            Text("\(request.totalCasualties)")
+                                .fontWeight(.bold)
                         }
 
-                        let deliveredCount = statuses.filter { $0.isDelivered }.count
-                        let readCount = statuses.filter { $0.isRead }.count
-
-                        HStack {
-                            Text("Status")
-                            Spacer()
-                            Text("Delivered: \(deliveredCount), Read: \(readCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                        if !request.casualtyDetails.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Details")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(request.casualtyDetails)
+                            }
                         }
-                    }
-                }
-
-                // M - Military Details
-                Section {
-                    DetailRow(label: "Callsign", value: request.callsign)
-                    DetailRow(label: "Unit", value: request.unit)
-                } header: {
-                    SectionHeader(letter: "M", title: "MILITARY DETAILS")
-                }
-
-                // E - Exact Location
-                Section {
-                    if !request.incidentLocation.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Location Description")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(request.incidentLocation)
-                        }
-                    }
-
-                    if let lat = request.incidentLatitude, let lon = request.incidentLongitude {
-                        HStack {
-                            Text("Coordinates")
-                            Spacer()
-                            Text(String(format: "%.6f, %.6f", lat, lon))
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-
-                        // Mini map preview
-                        Map(position: .constant(MapCameraPosition.region(MKCoordinateRegion(
-                            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                        )))) {
-                            Marker("Incident", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-                        }
-                        .frame(height: 150)
-                        .cornerRadius(8)
-                    }
-                } header: {
-                    SectionHeader(letter: "E", title: "EXACT LOCATION")
-                }
-
-                // T - Time and Type
-                Section {
-                    DetailRow(label: "Time", value: request.incidentTime)
-                    DetailRow(label: "Type", value: request.incidentType)
-                } header: {
-                    SectionHeader(letter: "T", title: "TIME AND TYPE")
-                }
-
-                // H - Hazards
-                if !request.hazards.isEmpty {
-                    Section {
-                        Text(request.hazards)
                     } header: {
-                        SectionHeader(letter: "H", title: "HAZARDS")
+                        SectionHeader(letter: "N", title: "CASUALTIES")
+                    }
+
+                    // E - Expected Response
+                    Section {
+                        if !request.assetsPresent.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Assets Present")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(request.assetsPresent)
+                            }
+                        }
+
+                        if !request.assetsRequired.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Assets Required")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(request.assetsRequired)
+                            }
+                        }
+                    } header: {
+                        SectionHeader(letter: "E", title: "EXPECTED RESPONSE")
                     }
                 }
 
-                // A - Approach Routes
-                Section {
-                    if !request.approachRoutes.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Approach Routes")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(request.approachRoutes)
-                        }
-                    }
-
-                    if !request.hlsLocation.isEmpty {
-                        DetailRow(label: "HLS Location", value: request.hlsLocation)
-                    }
-
-                    if let hlsLat = request.hlsLatitude, let hlsLon = request.hlsLongitude {
+                // Action buttons outside the List
+                VStack(spacing: 12) {
+                    Button {
+                        showingDuplicate = true
+                    } label: {
                         HStack {
-                            Text("HLS Coordinates")
-                            Spacer()
-                            Text(String(format: "%.6f, %.6f", hlsLat, hlsLon))
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.secondary)
+                            Image(systemName: "doc.on.doc")
+                            Text("Duplicate Request")
                         }
-                    }
-                } header: {
-                    SectionHeader(letter: "A", title: "APPROACH ROUTES & HLS")
-                }
-
-                // N - Casualties
-                Section {
-                    HStack(spacing: 16) {
-                        CasualtyBadge(label: "P1", count: request.casualtyCountP1, color: .red)
-                        CasualtyBadge(label: "P2", count: request.casualtyCountP2, color: .yellow)
-                        CasualtyBadge(label: "P3", count: request.casualtyCountP3, color: .green)
-                        CasualtyBadge(label: "KIA", count: request.casualtyCountDeceased, color: .gray)
-                    }
-                    .padding(.vertical, 4)
-
-                    HStack {
-                        Text("Total")
-                        Spacer()
-                        Text("\(request.totalCasualties)")
-                            .fontWeight(.bold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                     }
 
-                    if !request.casualtyDetails.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Details")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(request.casualtyDetails)
-                        }
-                    }
-                } header: {
-                    SectionHeader(letter: "N", title: "CASUALTIES")
-                }
-
-                // E - Expected Response
-                Section {
-                    if !request.assetsPresent.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Assets Present")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(request.assetsPresent)
-                        }
-                    }
-
-                    if !request.assetsRequired.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Assets Required")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(request.assetsRequired)
-                        }
-                    }
-                } header: {
-                    SectionHeader(letter: "E", title: "EXPECTED RESPONSE")
-                }
-
-                // Delete section
-                Section {
-                    Button(role: .destructive) {
+                    Button {
                         methaneVM.deleteRequest(requestId: request.id)
                         dismiss()
                     } label: {
-                        Label("Delete Request", systemImage: "trash")
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Request")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                     }
                 }
+                .padding()
             }
             .navigationTitle("METHANE Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showingDuplicate) {
+                CreateMethaneScreen(duplicateFrom: request)
             }
         }
     }

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 /// Coordinates message routing between UDP and MQTT transports.
 /// This is the main entry point for all network operations.
@@ -8,6 +9,10 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Singleton
 
     public static let shared = TransportCoordinator()
+
+    // MARK: - Logger
+
+    private let logger = Logger(subsystem: "com.swetak", category: "TransportCoordinator")
 
     // MARK: - Published State
 
@@ -60,14 +65,22 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Transport Management
 
     public func setMode(_ mode: TransportMode) {
-        guard mode != activeMode else { return }
+        logger.info("setMode() called: requested=\(mode.rawValue) current=\(self.activeMode.rawValue)")
+
+        guard mode != activeMode else {
+            logger.info("setMode() - mode already set, skipping")
+            return
+        }
 
         // Stop current transport
+        logger.info("Stopping current transport...")
         stopCurrentTransport()
 
         activeMode = mode
+        logger.info("activeMode changed to: \(mode.rawValue)")
 
         // Start new transport
+        logger.info("Starting new transport...")
         startCurrentTransport()
     }
 
@@ -122,20 +135,25 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     private func startMQTT() {
+        logger.info("startMQTT() called - config valid: \(self.mqttConfiguration.isValid), host: \(self.mqttConfiguration.host)")
+
         guard mqttConfiguration.isValid else {
+            logger.error("startMQTT() - invalid MQTT configuration!")
             connectionState = .error("Invalid MQTT configuration")
             return
         }
 
         // Configure and start MQTT transport
+        logger.info("Configuring MQTTClientManager...")
         let mqtt = MQTTClientManager.shared
         mqtt.configure(with: mqttConfiguration)
 
-        // Subscribe to MQTT connection state changes
-        mqtt.$isConnected
+        // Subscribe to MQTT connection state changes (full state, not just boolean)
+        mqtt.connectionState
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] connected in
-                self?.connectionState = connected ? .connected : .disconnected
+            .sink { [weak self] state in
+                self?.logger.info("MQTT connection state update: \(String(describing: state))")
+                self?.connectionState = state
             }
             .store(in: &cancellables)
 
@@ -191,7 +209,11 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Request all pins from network
+    /// Opens a sync window to accept incoming pins for 30 seconds
     public func requestAllPins(callsign: String) {
+        // Open sync window to accept incoming pins
+        PinsViewModel.shared.startAwaitingPinSync(timeoutSeconds: 30)
+
         let payload: [String: Any] = [
             "callsign": callsign
         ]
@@ -290,17 +312,29 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send order
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendOrder(_ order: Order) {
-        let encoder = JSONEncoder()
-        guard let orderData = try? encoder.encode(order),
-              let orderDict = try? JSONSerialization.jsonObject(with: orderData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "orderId": order.id,
+            "type": order.type.rawValue,
+            "createdAtMillis": order.createdAtMillis,
+            "fromDeviceId": order.senderDeviceId,
+            "fromCallsign": order.senderCallsign,
+            "orientation": order.orientation,
+            "decision": order.decision,
+            "order": order.order,
+            "mission": order.mission,
+            "execution": order.execution,
+            "logistics": order.logistics,
+            "commandSignaling": order.commandSignaling,
+            "toDeviceIds": order.recipientDeviceIds
+        ]
 
         let message = NetworkMessage(
             type: .order,
             deviceId: deviceId,
-            payload: orderDict
+            payload: payload
         )
 
         sendMessage(message, to: order.recipientDeviceIds)
@@ -326,17 +360,30 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send report
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendReport(_ report: Report) {
-        let encoder = JSONEncoder()
-        guard let reportData = try? encoder.encode(report),
-              let reportDict = try? JSONSerialization.jsonObject(with: reportData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "reportId": report.id,
+            "fromDeviceId": report.senderDeviceId,
+            "fromCallsign": report.senderCallsign,
+            "toDeviceIds": report.recipientDeviceIds,
+            "createdAtMillis": report.createdAtMillis,
+            "woundedCount": report.woundedCount,
+            "deadCount": report.deadCount,
+            "capableCount": report.capableCount,
+            "replenishment": report.replenishment,
+            "fuel": report.fuel,
+            "ammunition": report.ammunition,
+            "equipment": report.equipment,
+            "readiness": report.readiness.rawValue,
+            "readinessDetails": report.readinessDetails
+        ]
 
         let message = NetworkMessage(
             type: .report,
             deviceId: deviceId,
-            payload: reportDict
+            payload: payload
         )
 
         sendMessage(message, to: report.recipientDeviceIds)
@@ -362,17 +409,58 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send METHANE request
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendMethane(_ methane: MethaneRequest) {
-        let encoder = JSONEncoder()
-        guard let methaneData = try? encoder.encode(methane),
-              let methaneDict = try? JSONSerialization.jsonObject(with: methaneData) as? [String: Any] else {
-            return
+        // Manually construct payload with Android-compatible field names
+        // Note: Android expects "requestId" not "methaneId"
+        var payload: [String: Any] = [
+            "requestId": methane.id,
+            "fromDeviceId": methane.senderDeviceId,
+            "fromCallsign": methane.senderCallsign,
+            "toDeviceIds": methane.recipientDeviceIds,
+            "createdAtMillis": methane.createdAtMillis,
+            // M - Military (callsign and unit)
+            "callsign": methane.callsign,
+            "unit": methane.unit,
+            // E - Exact location (Android expects incidentLocation, incidentLatitude, incidentLongitude)
+            "incidentLocation": methane.incidentLocation,
+            // T - Time and type
+            "incidentType": methane.incidentType,
+            "incidentTime": methane.incidentTime,
+            // H - Hazards
+            "hazards": methane.hazards,
+            // A - Approach routes and HLS (Android expects approachRoutes, hlsLocation, hlsLatitude, hlsLongitude)
+            "approachRoutes": methane.approachRoutes,
+            "hlsLocation": methane.hlsLocation,
+            // N - Numbers (Android expects casualtyCountP1, casualtyCountP2, casualtyCountP3, casualtyCountDeceased)
+            "casualtyCountP1": methane.casualtyCountP1,
+            "casualtyCountP2": methane.casualtyCountP2,
+            "casualtyCountP3": methane.casualtyCountP3,
+            "casualtyCountDeceased": methane.casualtyCountDeceased,
+            "casualtyDetails": methane.casualtyDetails,
+            // E - Emergency services (assets)
+            "assetsPresent": methane.assetsPresent,
+            "assetsRequired": methane.assetsRequired
+        ]
+
+        // Add optional coordinates only if present
+        if let lat = methane.incidentLatitude {
+            payload["incidentLatitude"] = lat
+        }
+        if let lon = methane.incidentLongitude {
+            payload["incidentLongitude"] = lon
+        }
+        if let hlsLat = methane.hlsLatitude {
+            payload["hlsLatitude"] = hlsLat
+        }
+        if let hlsLon = methane.hlsLongitude {
+            payload["hlsLongitude"] = hlsLon
         }
 
         let message = NetworkMessage(
             type: .methane,
             deviceId: deviceId,
-            payload: methaneDict
+            payload: payload
         )
 
         sendMessage(message, to: methane.recipientDeviceIds)
@@ -398,17 +486,33 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     /// Send MEDEVAC report
+    /// Uses Android-compatible field names for cross-platform compatibility
     public func sendMedevac(_ medevac: MedevacReport) {
-        let encoder = JSONEncoder()
-        guard let medevacData = try? encoder.encode(medevac),
-              let medevacDict = try? JSONSerialization.jsonObject(with: medevacData) as? [String: Any] else {
-            return
-        }
+        // Manually construct payload with Android-compatible field names
+        let payload: [String: Any] = [
+            "reportId": medevac.id,
+            "fromDeviceId": medevac.senderDeviceId,
+            "fromCallsign": medevac.senderCallsign,
+            "toDeviceIds": medevac.recipientDeviceIds,
+            "createdAtMillis": medevac.createdAtMillis,
+            "soldierName": medevac.soldierName,
+            "priority": medevac.priority.rawValue,
+            "ageInfo": medevac.ageInfo,
+            "incidentTime": medevac.incidentTime,
+            "mechanismOfInjury": medevac.mechanismOfInjury,
+            "injuryDescription": medevac.injuryDescription,
+            "signsSymptoms": medevac.signsSymptoms,
+            "pulse": medevac.pulse,
+            "bodyTemperature": medevac.bodyTemperature,
+            "treatmentActions": medevac.treatmentActions,
+            "medicinesGiven": medevac.medicinesGiven,
+            "caretakerName": medevac.caretakerName
+        ]
 
         let message = NetworkMessage(
             type: .medevac,
             deviceId: deviceId,
-            payload: medevacDict
+            payload: payload
         )
 
         sendMessage(message, to: medevac.recipientDeviceIds)
@@ -452,18 +556,24 @@ public final class TransportCoordinator: ObservableObject {
 
     // MARK: - Peer Discovery Methods
 
-    /// Refresh peer discovery
-    /// Sends hello/profile request to discover peers on network
+    /// Refresh peer discovery for both UDP and MQTT modes
+    /// Sends profile request to discover peers and publishes own profile
     public func refreshPeerDiscovery(callsign: String) {
         switch activeMode {
         case .localUDP:
+            // Send hello to announce ourselves
             UDPClientManager.shared.sendHello(callsign: callsign, deviceId: deviceId)
-            // Profile requests are auto-sent by UDPClientManager when receiving hello/pos
+            // Broadcast profile request to discover all peers
+            UDPClientManager.shared.broadcastProfileRequest(callsign: callsign, deviceId: deviceId)
+            // Also publish our own profile so others know about us
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                UDPClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
+            }
 
         case .mqtt:
-            // For MQTT, publish a profile request and our own profile
+            // Publish profile request to MQTT topic
             MQTTClientManager.shared.publishProfileRequest(deviceId: deviceId, callsign: callsign)
-            // Also publish our profile so others can discover us
+            // Also publish our own profile so others know about us
             if let myProfile = ContactsViewModel.shared.myProfile {
                 MQTTClientManager.shared.publishProfile(myProfile, deviceId: deviceId)
             }
@@ -500,12 +610,16 @@ public final class TransportCoordinator: ObservableObject {
     // MARK: - Private Send
 
     private func sendMessage(_ message: NetworkMessage, to recipients: [String]? = nil) {
+        logger.info("sendMessage: type=\(message.type.rawValue) activeMode=\(self.activeMode.rawValue) connected=\(self.connectionState.isConnected)")
+
         switch activeMode {
         case .localUDP:
             // Use UDPClientManager which handles broadcast + unicast
+            logger.debug("Sending via UDP")
             UDPClientManager.shared.send(message: message, to: recipients)
         case .mqtt:
             // Use MQTTClientManager which handles topic routing internally
+            logger.info("Sending via MQTT to topic: \(MQTTTopic.topic(for: message.type))")
             MQTTClientManager.shared.send(message: message, to: recipients)
         }
     }
@@ -582,19 +696,11 @@ public final class TransportCoordinator: ObservableObject {
               let lon = payload["lon"] as? Double else { return }
 
         DispatchQueue.main.async { [weak self] in
-            // Notify the position listener (MapViewModel) for map updates
             self?.positionListener?.onPositionReceived(
                 deviceId: deviceId,
                 callsign: callsign,
                 latitude: lat,
                 longitude: lon
-            )
-
-            // Also notify ContactsViewModel for device discovery
-            // This ensures devices are discovered from position messages
-            ContactsViewModel.shared.handlePositionForDiscovery(
-                deviceId: deviceId,
-                callsign: callsign
             )
         }
     }
@@ -680,24 +786,38 @@ public final class TransportCoordinator: ObservableObject {
     }
 
     private func handleOrder(_ payload: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              var order = try? JSONDecoder().decode(Order.self, from: data) else { return }
+        // Parse Android-compatible field names
+        // Android uses: orderId, fromDeviceId, fromCallsign, toDeviceIds
+        guard let orderId = payload["orderId"] as? String,
+              let typeString = payload["type"] as? String,
+              let type = OrderType(rawValue: typeString),
+              let createdAtMillis = payload["createdAtMillis"] as? Int64,
+              let fromDeviceId = payload["fromDeviceId"] as? String else { return }
 
-        // Override direction for incoming
-        order = Order(
-            id: order.id,
-            type: order.type,
-            createdAtMillis: order.createdAtMillis,
-            senderDeviceId: order.senderDeviceId,
-            senderCallsign: order.senderCallsign,
-            orientation: order.orientation,
-            decision: order.decision,
-            order: order.order,
-            mission: order.mission,
-            execution: order.execution,
-            logistics: order.logistics,
-            commandSignaling: order.commandSignaling,
-            recipientDeviceIds: order.recipientDeviceIds,
+        let fromCallsign = payload["fromCallsign"] as? String ?? ""
+        let orientation = payload["orientation"] as? String ?? ""
+        let decision = payload["decision"] as? String ?? ""
+        let orderField = payload["order"] as? String ?? ""
+        let mission = payload["mission"] as? String ?? ""
+        let execution = payload["execution"] as? String ?? ""
+        let logistics = payload["logistics"] as? String ?? ""
+        let commandSignaling = payload["commandSignaling"] as? String ?? ""
+        let toDeviceIds = payload["toDeviceIds"] as? [String] ?? []
+
+        let order = Order(
+            id: orderId,
+            type: type,
+            createdAtMillis: createdAtMillis,
+            senderDeviceId: fromDeviceId,
+            senderCallsign: fromCallsign,
+            orientation: orientation,
+            decision: decision,
+            order: orderField,
+            mission: mission,
+            execution: execution,
+            logistics: logistics,
+            commandSignaling: commandSignaling,
+            recipientDeviceIds: toDeviceIds,
             direction: .incoming,
             isRead: false
         )

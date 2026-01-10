@@ -7,6 +7,9 @@ public struct CreateMedevacScreen: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var contactsVM = ContactsViewModel.shared
 
+    // Optional report to duplicate from
+    private let duplicateFrom: MedevacReport?
+
     // Patient information
     @State private var soldierName = ""
     @State private var priority: MedevacPriority = .p2
@@ -44,7 +47,9 @@ public struct CreateMedevacScreen: View {
         contactsVM.contacts.filter { $0.deviceId != TransportCoordinator.shared.deviceId }
     }
 
-    public init() {}
+    public init(duplicateFrom: MedevacReport? = nil) {
+        self.duplicateFrom = duplicateFrom
+    }
 
     public var body: some View {
         NavigationStack {
@@ -60,6 +65,24 @@ public struct CreateMedevacScreen: View {
     }
 
     private func setupDefaults() {
+        // If duplicating, pre-fill all fields from source (except recipients)
+        if let source = duplicateFrom {
+            soldierName = source.soldierName
+            priority = source.priority
+            ageInfo = source.ageInfo
+            incidentTime = source.incidentTime
+            mechanismOfInjury = source.mechanismOfInjury
+            injuryDescription = source.injuryDescription
+            signsSymptoms = source.signsSymptoms
+            pulse = source.pulse
+            bodyTemperature = source.bodyTemperature
+            treatmentActions = source.treatmentActions
+            medicinesGiven = source.medicinesGiven
+            caretakerName = source.caretakerName
+            // Recipients are intentionally NOT copied - user must select new ones
+            return
+        }
+
         // Set default caretaker from profile
         if let profile = contactsVM.myProfile {
             caretakerName = profile.callsign ?? ""
@@ -101,26 +124,28 @@ public struct CreateMedevacScreen: View {
             Section {
                 TextField("Soldier Name *", text: $soldierName)
 
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Priority")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Picker("Priority", selection: $priority) {
-                            ForEach(MedevacPriority.allCases, id: \.self) { p in
-                                Text(p.displayName)
-                                    .foregroundColor(p.color)
-                                    .tag(p)
-                            }
+                VStack(alignment: .leading) {
+                    Text("Priority")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Priority", selection: $priority) {
+                        ForEach(MedevacPriority.allCases, id: \.self) { p in
+                            Text(p.displayName)
+                                .foregroundColor(p.color)
+                                .tag(p)
                         }
-                        .pickerStyle(.menu)
                     }
-
-                    TextField("Age", text: $ageInfo)
-                        .frame(maxWidth: 100)
+                    .pickerStyle(.menu)
                 }
 
-                TextField("Time of Incident (DDHHMM)", text: $incidentTime)
+                TextField("Age", text: $ageInfo)
+
+                VStack(alignment: .leading) {
+                    Text("Time of Incident")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("DDHHMM", text: $incidentTime)
+                }
             } header: {
                 Text("PATIENT INFORMATION")
                     .foregroundColor(.blue)

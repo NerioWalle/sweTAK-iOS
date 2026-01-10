@@ -20,6 +20,13 @@ public final class MethaneViewModel: ObservableObject {
     @Published public private(set) var recipientStatuses: [MethaneRecipientStatus] = []
     @Published public private(set) var unreadIncomingCount: Int = 0
 
+    // MARK: - Incoming Notification
+
+    private let incomingNotificationSubject = PassthroughSubject<MethaneRequest, Never>()
+    public var incomingNotification: AnyPublisher<MethaneRequest, Never> {
+        incomingNotificationSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - UserDefaults Keys
 
     private enum Keys {
@@ -160,6 +167,9 @@ public final class MethaneViewModel: ObservableObject {
         requests.append(incomingRequest)
         saveRequests()
         updateUnreadCount()
+
+        // Emit notification for UI banner
+        incomingNotificationSubject.send(incomingRequest)
 
         // Send delivery ACK
         sendAck(requestId: incomingRequest.id, toDeviceId: incomingRequest.senderDeviceId, ackType: .delivered)

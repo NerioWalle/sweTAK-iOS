@@ -22,8 +22,6 @@
 	<string>1</string>
 	<key>NSCameraUsageDescription</key>
 	<string>sweTAK needs camera access to capture photos for photo pins</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>sweTAK needs permission to save photos to your photo library</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>sweTAK needs your location to track your position and record breadcrumb trails</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

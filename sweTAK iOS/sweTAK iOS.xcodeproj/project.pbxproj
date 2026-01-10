@@ -1096,7 +1096,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = U8BMQ9HFG9;
+				DEVELOPMENT_TEAM = 3K579NT399;
 				INFOPLIST_FILE = "sweTAK iOS/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = sweTAK;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
@@ -1105,7 +1105,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK;
 				PRODUCT_NAME = sweTAK;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1122,7 +1122,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "sweTAK iOS";
@@ -1139,7 +1139,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/sweTAK iOS.app/sweTAK iOS";
@@ -1153,7 +1153,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = U8BMQ9HFG9;
+				DEVELOPMENT_TEAM = 3K579NT399;
 				INFOPLIST_FILE = "sweTAK iOS/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = sweTAK;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
@@ -1162,7 +1162,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK;
 				PRODUCT_NAME = sweTAK;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1179,7 +1179,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/sweTAK iOS.app/sweTAK iOS";
@@ -1196,7 +1196,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.Nerio.sweTAK.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = se.neriodefense.sweTAK.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = "sweTAK iOS";

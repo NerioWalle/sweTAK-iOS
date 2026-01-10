@@ -3,7 +3,8 @@ import Combine
 import CocoaMQTT
 import os.log
 
-/// MQTT client manager for iOS using CocoaMQTT
+/// MQTT client manager for iOS using CocoaMQTT (MQTT 3.1.1)
+/// Note: Using MQTT 3.1.1 for better compatibility with most brokers
 public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObject {
 
     // MARK: - Singleton
@@ -36,8 +37,10 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     private var maxMessageAgeMinutes: Int = 360  // 6 hours default
 
     // MARK: - MQTT Client
+    // Using MQTT 3.1.1 (CocoaMQTT) as primary - more universally supported
+    // MQTT 5.0 (CocoaMQTT5) available as fallback
 
-    private var mqtt: CocoaMQTT5?
+    private var mqtt: CocoaMQTT?
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Message Handlers
@@ -78,7 +81,48 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
     public func send(message: NetworkMessage, to recipients: [String]?) {
         let topic = MQTTTopic.topic(for: message.type)
-        publish(message: message, to: topic)
+
+        logger.info("send() called: type=\(message.type.rawValue) topic=\(topic)")
+
+        // Create a flat JSON structure (payload fields at top level) for MQTT
+        // This matches the format expected by Android and the message handlers
+        var flatJson: [String: Any] = [
+            "type": message.type.rawValue,
+            "deviceId": message.deviceId,
+            "ts": message.timestamp
+        ]
+
+        // Add callsign from SettingsViewModel for all messages
+        let callsign = SettingsViewModel.shared.callsign
+        flatJson["callsign"] = callsign
+
+        // Merge payload fields into top level
+        for (key, value) in message.payload {
+            // Map some field names to match Android protocol
+            switch key {
+            case "type":
+                // Pin type uses "natoType" to avoid collision with message type
+                flatJson["natoType"] = value
+            default:
+                flatJson[key] = value
+            }
+        }
+
+        // Add timestamp variants for compatibility
+        if let createdAt = message.payload["createdAtMillis"] {
+            flatJson["createdAtMillis"] = createdAt
+        }
+
+        do {
+            let data = try JSONSerialization.data(withJSONObject: flatJson, options: [])
+            guard let jsonString = String(data: data, encoding: .utf8) else {
+                logger.error("Failed to convert JSON data to string")
+                return
+            }
+            publish(json: jsonString, to: topic)
+        } catch {
+            logger.error("Failed to serialize message: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Configuration
@@ -106,32 +150,46 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
         _connectionState = .connecting
 
-        // Create MQTT 5 client
-        let clientId = config.clientId.isEmpty ? "swetak-ios-\(UUID().uuidString.prefix(8))" : config.clientId
-        let mqtt5 = CocoaMQTT5(clientID: clientId, host: config.host, port: UInt16(config.port))
+        // Create MQTT 3.1.1 client (most universally supported)
+        // ALWAYS use persistent client ID based on device ID for session persistence
+        // This ensures the broker recognizes us across app restarts and delivers queued messages
+        let deviceId = SettingsViewModel.shared.deviceId
+        let clientId = "swetak-ios-\(deviceId)"
+
+        logger.info("🔑 MQTT Client ID: \(clientId)")
+        logger.info("📱 Device ID from settings: \(deviceId)")
+        logger.info("🔄 cleanSession will be set to FALSE for persistent sessions")
+
+        let mqttClient = CocoaMQTT(clientID: clientId, host: config.host, port: UInt16(config.port))
 
         // Configure connection options
-        mqtt5.username = config.username
-        mqtt5.password = config.password
-        mqtt5.keepAlive = 60
-        mqtt5.autoReconnect = true
-        mqtt5.autoReconnectTimeInterval = 5
-        mqtt5.cleanSession = true
+        mqttClient.username = config.username
+        mqttClient.password = config.password
+        mqttClient.keepAlive = 60
+        mqttClient.autoReconnect = true
+        mqttClient.autoReconnectTimeInterval = 5
+        // cleanSession = false to receive messages queued while offline (QoS 1/2)
+        mqttClient.cleanSession = false
 
         // TLS configuration
-        mqtt5.enableSSL = config.useTLS
+        mqttClient.enableSSL = config.useTLS
         if config.useTLS {
-            mqtt5.allowUntrustCACertificate = false  // Use system trust store
+            // Allow untrusted certificates for servers with self-signed certs
+            mqttClient.allowUntrustCACertificate = true
+            logger.info("TLS enabled with allowUntrustCACertificate=true")
         }
 
         // Set delegate
-        mqtt5.delegate = self
+        mqttClient.delegate = self
 
-        self.mqtt = mqtt5
+        self.mqtt = mqttClient
 
         // Attempt connection
-        let result = mqtt5.connect()
-        if !result {
+        logger.info("Initiating connection to \(config.host):\(config.port)...")
+        let result = mqttClient.connect()
+        if result {
+            logger.info("Connection initiated successfully, waiting for CONNACK...")
+        } else {
             logger.error("connect() failed to initiate connection")
             _connectionState = .error("Failed to initiate MQTT connection")
         }
@@ -160,8 +218,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
             logger.debug("Publishing to \(topic): \(payload.prefix(100))...")
 
-            let properties = MqttPublishProperties()
-            mqtt.publish(topic, withString: payload, qos: qos, retained: retained, properties: properties)
+            mqtt.publish(topic, withString: payload, qos: qos, retained: retained)
         } catch {
             logger.error("publish() failed to serialize message: \(error.localizedDescription)")
         }
@@ -169,15 +226,20 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
     /// Publish raw JSON string to a topic
     public func publish(json: String, to topic: String, qos: CocoaMQTTQoS = .qos1, retained: Bool = false) {
-        guard let mqtt = mqtt, isConnected else {
-            logger.warning("publish(json:) aborted: not connected")
+        guard let mqtt = mqtt else {
+            logger.error("publish(json:) aborted: mqtt client is nil")
             return
         }
 
-        logger.debug("Publishing to \(topic): \(json.prefix(100))...")
+        guard isConnected else {
+            logger.warning("publish(json:) aborted: not connected (state: \(String(describing: self._connectionState)))")
+            return
+        }
 
-        let properties = MqttPublishProperties()
-        mqtt.publish(topic, withString: json, qos: qos, retained: retained, properties: properties)
+        logger.info("Publishing to \(topic): \(json.prefix(200))...")
+
+        mqtt.publish(topic, withString: json, qos: qos, retained: retained)
+        logger.debug("Publish call completed for topic: \(topic)")
     }
 
     /// Publish position update
@@ -247,6 +309,21 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
         """
 
         publish(json: json, to: MQTTTopic.profile)
+    }
+
+    /// Publish profile request to discover peers
+    public func publishProfileRequest(deviceId: String, callsign: String?) {
+        let json = """
+        {
+            "type": "profile_req",
+            "deviceId": "\(deviceId)",
+            "callsign": "\(escapeJSON(callsign ?? ""))",
+            "ts": \(Date.currentMillis)
+        }
+        """
+
+        logger.info("Publishing profile request from \(callsign ?? "unknown")")
+        publish(json: json, to: "swetak/v1/profile_req")
     }
 
     /// Publish chat message
@@ -327,10 +404,15 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
 
         // Check message age for replay protection
         if let timestamp = json["ts"] as? Int64 ?? json["createdAtMillis"] as? Int64 ?? json["timestamp"] as? Int64 {
+            let ageMillis = Date.currentMillis - timestamp
+            let ageMinutes = ageMillis / 60000
+            logger.info("Message age: \(ageMinutes) min (max allowed: \(self.maxMessageAgeMinutes) min)")
             if isMessageTooOld(timestamp) {
-                logger.debug("Ignoring old message (age > \(self.maxMessageAgeMinutes) min)")
+                logger.warning("⚠️ Ignoring old message (age \(ageMinutes) min > \(self.maxMessageAgeMinutes) min)")
                 return
             }
+        } else {
+            logger.info("Message has no timestamp, accepting")
         }
 
         // Route to appropriate handler based on topic/type
@@ -444,43 +526,95 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 
     private func handleProfileRequestMessage(_ json: [String: Any], deviceId: String) {
-        logger.debug("Profile request received from \(deviceId)")
+        logger.info("Profile request received from \(deviceId) - responding with our profile")
 
-        // Respond with our profile
-        if let myProfile = ContactsViewModel.shared.myProfile {
-            let myDeviceId = TransportCoordinator.shared.deviceId
-            publishProfile(myProfile, deviceId: myDeviceId)
-            logger.info("Responded to profile request from \(deviceId) with our profile")
-        }
-    }
-
-    /// Publish a profile request to discover peers
-    public func publishProfileRequest(deviceId: String, callsign: String) {
-        let json = """
-        {
-            "type": "profile_req",
-            "deviceId": "\(deviceId)",
-            "callsign": "\(escapeJSON(callsign))",
-            "ts": \(Date.currentMillis)
-        }
-        """
-
-        publish(json: json, to: "swetak/v1/profile_req")
-        logger.info("Published profile request")
-    }
-
-    private func handleChatMessage(_ json: [String: Any], deviceId: String) {
-        guard let threadId = json["threadId"] as? String,
-              let fromDeviceId = json["fromDeviceId"] as? String,
-              let toDeviceId = json["toDeviceId"] as? String,
-              let text = json["text"] as? String else {
-            logger.warning("Invalid chat message")
+        // Don't respond to our own requests
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        guard deviceId != myDeviceId else {
+            logger.debug("Ignoring our own profile request")
             return
         }
 
-        let timestamp = json["timestamp"] as? Int64 ?? Date.currentMillis
+        // Get our profile from ContactsViewModel and respond
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+
+            if let myProfile = ContactsViewModel.shared.myProfile {
+                self.logger.info("Sending profile response: callsign=\(myProfile.callsign ?? "unknown")")
+                self.publishProfile(myProfile, deviceId: myDeviceId)
+            } else {
+                // Fallback: create minimal profile from SettingsViewModel
+                let settings = SettingsViewModel.shared
+                let profile = ContactProfile(
+                    deviceId: myDeviceId,
+                    nickname: settings.profile.nickname.isEmpty ? nil : settings.profile.nickname,
+                    callsign: settings.profile.callsign.isEmpty ? nil : settings.profile.callsign,
+                    firstName: settings.profile.firstName.isEmpty ? nil : settings.profile.firstName,
+                    lastName: settings.profile.lastName.isEmpty ? nil : settings.profile.lastName,
+                    company: settings.profile.company.isEmpty ? nil : settings.profile.company,
+                    platoon: settings.profile.platoon.isEmpty ? nil : settings.profile.platoon,
+                    squad: settings.profile.squad.isEmpty ? nil : settings.profile.squad,
+                    mobile: settings.profile.phone.isEmpty ? nil : settings.profile.phone,
+                    email: settings.profile.email.isEmpty ? nil : settings.profile.email,
+                    role: settings.profile.role
+                )
+                self.logger.info("Sending fallback profile response: callsign=\(profile.callsign ?? "unknown")")
+                self.publishProfile(profile, deviceId: myDeviceId)
+            }
+        }
+    }
+
+    private func handleChatMessage(_ json: [String: Any], deviceId: String) {
+        logger.info("handleChatMessage received - raw JSON: \(json)")
+        logger.info("handleChatMessage - deviceId from topic: \(deviceId)")
+
+        // Try multiple field name variants for compatibility with Android
+        let fromDeviceId = json["fromDeviceId"] as? String ?? json["from"] as? String ?? json["senderId"] as? String ?? deviceId
+        let toDeviceId = json["toDeviceId"] as? String ?? json["to"] as? String ?? json["recipientId"] as? String ?? ""
+        let text = json["text"] as? String ?? json["message"] as? String ?? json["content"] as? String ?? json["body"] as? String ?? ""
+
+        logger.info("handleChatMessage - parsed: from=\(fromDeviceId), to=\(toDeviceId), text=\(text.prefix(30))")
+
+        guard !text.isEmpty else {
+            logger.warning("Invalid chat message - no text field found in: \(json.keys)")
+            return
+        }
+
+        // Check if this message is for us
+        let myDeviceId = TransportCoordinator.shared.deviceId
+        logger.info("handleChatMessage - myDeviceId: \(myDeviceId)")
+
+        // Reject messages from ourselves (echoes)
+        let isFromUs = fromDeviceId == myDeviceId
+        if isFromUs {
+            logger.debug("Chat message is from us (echo), ignoring")
+            return
+        }
+
+        // Only accept messages explicitly addressed to us
+        // Do NOT accept empty toDeviceId to avoid seeing conversations between other devices
+        let isForUs = toDeviceId == myDeviceId
+        if !isForUs {
+            logger.info("Chat message not for us (to: '\(toDeviceId)', me: '\(myDeviceId)'), ignoring")
+            return
+        }
+
+        logger.info("Chat message IS for us - proceeding to deliver")
+
+        // Get timestamp with fallbacks
+        let timestamp = json["timestamp"] as? Int64
+            ?? json["timestampMillis"] as? Int64
+            ?? json["ts"] as? Int64
+            ?? (json["timestamp"] as? Double).map { Int64($0) }
+            ?? (json["timestampMillis"] as? Double).map { Int64($0) }
+            ?? Date.currentMillis
+
+        // For incoming messages, the thread should be keyed by the sender's deviceId
+        // This matches how outgoing messages use toDeviceId as threadId
+        let threadId = json["threadId"] as? String ?? fromDeviceId
 
         let message = ChatMessage(
+            id: json["id"] as? String ?? json["messageId"] as? String ?? "\(timestamp)-\(text.hashValue)",
             threadId: threadId,
             fromDeviceId: fromDeviceId,
             toDeviceId: toDeviceId,
@@ -489,7 +623,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             direction: .incoming
         )
 
-        logger.debug("Chat received from \(fromDeviceId): \(text.prefix(50))")
+        logger.info("Chat message created - threadId: \(threadId), delivering to listener")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.chatListener?.onChatMessageReceived(message: message)
@@ -535,7 +669,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             isRead: false
         )
 
-        logger.info("Order received: \(orderId) type=\(orderType)")
+        logger.info("Order received: \(orderId) type=\(orderType.rawValue)")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.orderListener?.onOrderReceived(order: order)
@@ -573,7 +707,7 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
             timestampMillis: timestampMillis
         )
 
-        logger.debug("Order ACK received: \(orderId) type=\(ackType)")
+        logger.debug("Order ACK received: \(orderId) type=\(ackType.rawValue)")
 
         DispatchQueue.main.async {
             TransportCoordinator.shared.orderListener?.onOrderAckReceived(ack: ack)
@@ -855,74 +989,92 @@ public final class MQTTClientManager: NSObject, TransportProtocol, ObservableObj
     }
 }
 
-// MARK: - CocoaMQTT5Delegate
+// MARK: - CocoaMQTTDelegate (MQTT 3.1.1)
 
-extension MQTTClientManager: CocoaMQTT5Delegate {
+extension MQTTClientManager: CocoaMQTTDelegate {
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didConnectAck ack: CocoaMQTTCONNACKReasonCode, connAckData: MqttDecodeConnAck?) {
-        logger.info("Connected with ack: \(String(describing: ack))")
+    public func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
+        logger.info("Connected with ack: \(String(describing: ack), privacy: .public)")
+        logger.info("MQTT Session Info - clientID: \(mqtt.clientID), cleanSession: \(mqtt.cleanSession)")
 
-        if ack == .success {
+        if ack == .accept {
             _connectionState = .connected
+            logger.info("Connection accepted, subscribing to topics. Any queued messages should arrive soon...")
             subscribeToAllTopics()
         } else {
-            _connectionState = .error("Connection rejected: \(ack)")
+            let errorMsg: String
+            switch ack {
+            case .unacceptableProtocolVersion:
+                errorMsg = "Unacceptable protocol version"
+            case .identifierRejected:
+                errorMsg = "Client identifier rejected"
+            case .serverUnavailable:
+                errorMsg = "Server unavailable"
+            case .badUsernameOrPassword:
+                errorMsg = "Bad username or password"
+            case .notAuthorized:
+                errorMsg = "Not authorized"
+            default:
+                errorMsg = "Connection rejected: \(ack)"
+            }
+            _connectionState = .error(errorMsg)
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishMessage message: CocoaMQTT5Message, id: UInt16) {
+    public func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {
         logger.debug("Message published: \(id)")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishAck id: UInt16, pubAckData: MqttDecodePubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didPublishAck id: UInt16) {
         logger.debug("Publish ack: \(id)")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didPublishRec id: UInt16, pubRecData: MqttDecodePubRec?) {
-        logger.debug("Publish rec: \(id)")
-    }
-
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveMessage message: CocoaMQTT5Message, id: UInt16, publishData: MqttDecodePublish?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didReceiveMessage message: CocoaMQTTMessage, id: UInt16) {
         let topic = message.topic
         let payload = message.payload
+
+        logger.info("📩 MQTT Message received - topic: \(topic), msgId: \(id), payloadSize: \(payload.count) bytes")
 
         handleMessage(topic: topic, payload: Data(payload))
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didSubscribeTopics success: NSDictionary, failed: [String], subAckData: MqttDecodeSubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didSubscribeTopics success: NSDictionary, failed: [String]) {
         logger.info("Subscribed to topics: \(success.allKeys)")
         if !failed.isEmpty {
             logger.warning("Failed to subscribe to: \(failed)")
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didUnsubscribeTopics topics: [String], unsubAckData: MqttDecodeUnsubAck?) {
+    public func mqtt(_ mqtt: CocoaMQTT, didUnsubscribeTopics topics: [String]) {
         logger.info("Unsubscribed from: \(topics)")
     }
 
-    public func mqtt5DidPing(_ mqtt5: CocoaMQTT5) {
+    public func mqttDidPing(_ mqtt: CocoaMQTT) {
         logger.debug("Ping sent")
     }
 
-    public func mqtt5DidReceivePong(_ mqtt5: CocoaMQTT5) {
+    public func mqttDidReceivePong(_ mqtt: CocoaMQTT) {
         logger.debug("Pong received")
     }
 
-    public func mqtt5DidDisconnect(_ mqtt5: CocoaMQTT5, withError err: Error?) {
+    public func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
         if let error = err {
-            logger.error("Disconnected with error: \(error.localizedDescription)")
-            _connectionState = .error("Disconnected: \(error.localizedDescription)")
+            let errorMsg = error.localizedDescription
+            logger.error("Disconnected with error: \(errorMsg, privacy: .public)")
+            logger.info("Session should persist on broker (cleanSession=false) for client: \(mqtt.clientID)")
+            _connectionState = .error(errorMsg)
         } else {
-            logger.info("Disconnected")
+            logger.info("Disconnected normally - session should persist on broker for client: \(mqtt.clientID)")
             _connectionState = .disconnected
         }
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveDisconnectReasonCode reasonCode: CocoaMQTTDISCONNECTReasonCode) {
-        logger.warning("Received disconnect reason: \(String(describing: reasonCode))")
+    public func mqtt(_ mqtt: CocoaMQTT, didStateChangeTo state: CocoaMQTTConnState) {
+        logger.info("MQTT state changed to: \(String(describing: state))")
     }
 
-    public func mqtt5(_ mqtt5: CocoaMQTT5, didReceiveAuthReasonCode reasonCode: CocoaMQTTAUTHReasonCode) {
-        logger.debug("Auth reason code: \(String(describing: reasonCode))")
+    public func mqtt(_ mqtt: CocoaMQTT, didReceive trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
+        // Accept all certificates for this server
+        completionHandler(true)
     }
 }

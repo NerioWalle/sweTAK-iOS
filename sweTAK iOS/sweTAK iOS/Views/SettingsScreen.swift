@@ -67,10 +67,14 @@ public struct SettingsScreen: View {
 
     private var appearanceSection: some View {
         Section("Appearance") {
-            Toggle("Dark Mode", isOn: Binding(
-                get: { settingsVM.settings.isDarkMode },
-                set: { settingsVM.setDarkMode($0) }
-            ))
+            Picker("Theme", selection: Binding(
+                get: { settingsVM.settings.appearanceMode },
+                set: { settingsVM.setAppearanceMode($0) }
+            )) {
+                ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
         }
     }
 
@@ -82,8 +86,8 @@ public struct SettingsScreen: View {
         Section("Map") {
             // Map style picker - using full MapStyle enum
             Picker("Map Style", selection: Binding(
-                get: { settingsVM.currentMapStyle },
-                set: { settingsVM.setFullMapStyle($0) }
+                get: { settingsVM.defaultMapStyle },
+                set: { settingsVM.setDefaultMapStyle($0) }
             )) {
                 ForEach(MapStyle.allCases, id: \.self) { style in
                     Label(style.displayName, systemImage: style.icon).tag(style)
@@ -113,15 +117,27 @@ public struct SettingsScreen: View {
                 }
             }
 
-            // MapTiler API Key
-            NavigationLink {
-                MapTilerSettingsView()
-            } label: {
-                HStack {
-                    Text("MapTiler Cloud")
-                    Spacer()
-                    Text(settingsVM.mapTilerSettings.isValid ? "Configured" : "Not Set")
-                        .foregroundColor(.secondary)
+            // Map provider picker
+            Picker("Map Provider", selection: Binding(
+                get: { settingsVM.mapProvider },
+                set: { settingsVM.setMapProvider($0) }
+            )) {
+                ForEach(MapProvider.allCases, id: \.self) { provider in
+                    Label(provider.displayName, systemImage: provider.icon).tag(provider)
+                }
+            }
+
+            // MapTiler API Key - only show if MapTiler is selected or configured
+            if settingsVM.mapProvider == .mapTiler || settingsVM.mapTilerSettings.isValid {
+                NavigationLink {
+                    MapTilerSettingsView()
+                } label: {
+                    HStack {
+                        Text("MapTiler Cloud")
+                        Spacer()
+                        Text(settingsVM.mapTilerSettings.isValid ? "Configured" : "Not Set")
+                            .foregroundColor(settingsVM.mapProvider == .mapTiler && !settingsVM.mapTilerSettings.isValid ? .orange : .secondary)
+                    }
                 }
             }
         }
@@ -136,7 +152,7 @@ public struct SettingsScreen: View {
                 get: { settingsVM.settings.unitSystem },
                 set: { settingsVM.setUnitSystem($0) }
             )) {
-                ForEach(UnitSystem.allCases, id: \.self) { unit in
+                ForEach(SettingsUnitSystem.allCases, id: \.self) { unit in
                     Text(unit.displayName).tag(unit)
                 }
             }
@@ -157,7 +173,7 @@ public struct SettingsScreen: View {
 
     private var transportSection: some View {
         Section {
-            Picker("Transport Mode", selection: Binding(
+            Picker("", selection: Binding(
                 get: { settingsVM.transportMode },
                 set: { settingsVM.setTransportMode($0) }
             )) {
@@ -165,6 +181,7 @@ public struct SettingsScreen: View {
                 Text("Internet (MQTT)").tag(TransportMode.mqtt)
             }
             .pickerStyle(.inline)
+            .labelsHidden()
 
             // Connection status
             HStack {
@@ -272,12 +289,9 @@ public struct SettingsScreen: View {
 
             // Connect/Disconnect button
             Button(action: {
-                print(">>> CONNECT BUTTON PRESSED - isConnected: \(settingsVM.isConnected), isValid: \(settingsVM.mqttSettings.isValid)")
                 if settingsVM.isConnected {
-                    print(">>> Calling disconnectMQTT()")
                     settingsVM.disconnectMQTT()
                 } else {
-                    print(">>> Calling connectMQTT() with host: \(settingsVM.mqttSettings.host)")
                     settingsVM.connectMQTT()
                 }
             }) {
@@ -668,7 +682,7 @@ struct ProfileEditView: View {
             // Organization
             Section("Organization") {
                 TextField("Company", text: $editableProfile.company)
-                TextField("Platoon", text: $editableProfile.platoon)
+                TextField("Platoon/Troop", text: $editableProfile.platoon)
                 TextField("Squad", text: $editableProfile.squad)
             }
 

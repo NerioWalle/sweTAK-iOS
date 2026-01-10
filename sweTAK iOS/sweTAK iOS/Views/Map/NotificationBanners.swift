@@ -71,8 +71,6 @@ public struct NotificationBanner: View {
     }
 }
 
-// Note: ChatNotificationBanner is defined in Components/NotificationBanner.swift
-
 // MARK: - Order Notification Banner
 
 /// Order notification banner
@@ -249,26 +247,6 @@ public struct NotificationBannerContainer<Content: View>: View {
 
 // MARK: - Previews
 
-#Preview("Chat Notification") {
-    ZStack {
-        Color.gray.opacity(0.3)
-
-        NotificationBannerContainer {
-            ChatNotificationBanner(
-                notification: IncomingChatNotification(
-                    threadId: "thread-1",
-                    fromDeviceId: "device-1",
-                    textPreview: "Roger that, moving to position now",
-                    callsign: "Alpha-1",
-                    nickname: "John"
-                ),
-                onTap: {},
-                onDismiss: {}
-            )
-        }
-    }
-}
-
 #Preview("Order Notification") {
     ZStack {
         Color.gray.opacity(0.3)
@@ -290,54 +268,16 @@ public struct NotificationBannerContainer<Content: View>: View {
     }
 }
 
-#Preview("METHANE Notification") {
+#Preview("Generic Notification") {
     ZStack {
         Color.gray.opacity(0.3)
 
         NotificationBannerContainer {
-            MethaneNotificationBanner(
-                request: MethaneRequest(
-                    senderDeviceId: "device-123",
-                    senderCallsign: "Bravo-2",
-                    callsign: "Bravo-2",
-                    unit: "Alpha Company",
-                    incidentLocation: "Highway 5, Exit 12",
-                    incidentTime: "1430",
-                    incidentType: "Traffic Accident",
-                    hazards: "Fuel spill",
-                    approachRoutes: "From north only",
-                    assetsPresent: "Fire",
-                    assetsRequired: "EMS",
-                    recipientDeviceIds: [],
-                    direction: .outgoing
-                ),
-                onClick: {},
-                onDismiss: {}
-            )
-        }
-    }
-}
-
-#Preview("MEDEVAC Notification") {
-    ZStack {
-        Color.gray.opacity(0.3)
-
-        NotificationBannerContainer {
-            MedevacNotificationBanner(
-                report: MedevacReport(
-                    senderDeviceId: "device-123",
-                    senderCallsign: "Medic-1",
-                    soldierName: "Pvt. Smith",
-                    priority: .p1,
-                    ageInfo: "Adult",
-                    incidentTime: "1430",
-                    mechanismOfInjury: "Shrapnel",
-                    injuryDescription: "Leg wound",
-                    signsSymptoms: "Bleeding",
-                    caretakerName: "Sgt. Johnson",
-                    recipientDeviceIds: [],
-                    direction: .outgoing
-                ),
+            NotificationBanner(
+                icon: "exclamationmark.triangle.fill",
+                title: "METHANE Emergency",
+                subtitle: "From: Bravo-2 - Traffic Accident",
+                backgroundColor: .red.opacity(0.95),
                 onClick: {},
                 onDismiss: {}
             )

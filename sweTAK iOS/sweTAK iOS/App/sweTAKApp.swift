@@ -8,6 +8,7 @@ public struct sweTAKApp: App {
     // MARK: - State
 
     @StateObject private var appState = AppState()
+    @State private var showAboutScreen = false
 
     // MARK: - Body
 
@@ -16,7 +17,14 @@ public struct sweTAKApp: App {
             MainView()
                 .environmentObject(appState)
                 .preferredColorScheme(colorScheme)
+                .sheet(isPresented: $showAboutScreen) {
+                    AboutScreen(showStartupCheckbox: true)
+                }
                 .onAppear {
+                    // Show About screen at startup if not disabled
+                    if AboutScreenHelper.shouldShowAtStartup {
+                        showAboutScreen = true
+                    }
                     // Apply saved transport settings before starting
                     let settings = SettingsViewModel.shared
                     if settings.transportMode == .mqtt && settings.mqttSettings.isValid {
@@ -42,10 +50,7 @@ public struct sweTAKApp: App {
     }
 
     private var colorScheme: ColorScheme? {
-        if SettingsViewModel.shared.settings.isDarkMode {
-            return .dark
-        }
-        return nil
+        SettingsViewModel.shared.settings.appearanceMode.colorScheme
     }
 
     public init() {}

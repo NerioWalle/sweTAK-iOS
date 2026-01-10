@@ -19,6 +19,13 @@ public final class PinsViewModel: ObservableObject {
     @Published public private(set) var pins: [NatoPin] = []
     @Published public private(set) var linkedForms: [LinkedForm] = []
 
+    // MARK: - Sync State
+
+    /// Flag to track when we've explicitly requested pins from the network
+    /// Only accept incoming pins when this is true
+    private var awaitingPinSync: Bool = false
+    private var syncTimeoutTask: DispatchWorkItem?
+
     // MARK: - Configuration
 
     private var myDeviceId: String = ""
@@ -184,11 +191,58 @@ public final class PinsViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Pin Sync Request Management
+
+    /// Call this when requesting pins from the network
+    /// Opens a window to accept incoming pins for a limited time
+    public func startAwaitingPinSync(timeoutSeconds: Double = 30) {
+        logger.info("Starting pin sync window (timeout: \(timeoutSeconds)s)")
+        awaitingPinSync = true
+
+        // Cancel any existing timeout
+        syncTimeoutTask?.cancel()
+
+        // Set up new timeout to close the sync window
+        let task = DispatchWorkItem { [weak self] in
+            self?.stopAwaitingPinSync()
+        }
+        syncTimeoutTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeoutSeconds, execute: task)
+    }
+
+    /// Stop accepting incoming pins from the network
+    public func stopAwaitingPinSync() {
+        if awaitingPinSync {
+            logger.info("Closing pin sync window")
+            awaitingPinSync = false
+            syncTimeoutTask?.cancel()
+            syncTimeoutTask = nil
+        }
+    }
+
+    /// Check if we're currently accepting pins from the network
+    public var isAwaitingPinSync: Bool {
+        awaitingPinSync
+    }
+
+    /// Send all our pins to the network (response to a pin request)
+    public func respondToPinRequest(callsign: String) {
+        let pinCount = self.pins.count
+        logger.info("Responding to pin request with \(pinCount) pins")
+
+        for pin in self.pins {
+            TransportCoordinator.shared.publishPin(pin)
+        }
+    }
+
     // MARK: - Network Pin Handling
 
     private func handleIncomingPin(_ pin: NatoPin, fromDeviceId: String) {
-        // Ignore our own pins
-        guard fromDeviceId != myDeviceId else { return }
+        // Ignore our own pins (but allow if originDeviceId is empty - legacy pins)
+        if !fromDeviceId.isEmpty && fromDeviceId == myDeviceId {
+            logger.debug("Ignoring our own pin \(pin.id)")
+            return
+        }
 
         // Check if sender is blocked
         guard !blockedDeviceIds.contains(fromDeviceId) else {
@@ -196,15 +250,16 @@ public final class PinsViewModel: ObservableObject {
             return
         }
 
+        // Always accept pins from the network (like Android does)
         // Update or add pin
         if let index = pins.firstIndex(where: { $0.id == pin.id && $0.originDeviceId == pin.originDeviceId }) {
             pins[index] = pin
+            logger.debug("Updated pin \(pin.id) from \(fromDeviceId)")
         } else {
             pins.append(pin)
+            logger.info("Added new pin \(pin.id) from \(fromDeviceId) - type: \(pin.type.rawValue)")
         }
         savePins()
-
-        logger.debug("Received pin \(pin.id) from \(fromDeviceId)")
     }
 }
 
@@ -226,9 +281,15 @@ extension PinsViewModel: PinListener {
     }
 
     public func onPinRequestReceived(fromDeviceId: String) {
+        // Ignore our own requests
+        guard fromDeviceId != myDeviceId else { return }
+
+        let pinCount = self.pins.count
+        logger.info("Pin request received from \(fromDeviceId) - sending \(pinCount) pins")
+
         // Respond with all our pins
-        logger.debug("Pin request received from \(fromDeviceId)")
-        // The response is handled by the transport layer
+        let callsign = SettingsViewModel.shared.callsign
+        respondToPinRequest(callsign: callsign)
     }
 }
 

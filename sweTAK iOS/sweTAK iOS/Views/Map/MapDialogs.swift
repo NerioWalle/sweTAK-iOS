@@ -128,13 +128,18 @@ public struct PinEditDialog: View {
                 }
 
                 Section("Type") {
-                    Picker("Pin Type", selection: $pinType) {
-                        ForEach(editableTypes, id: \.self) { type in
-                            Label(type.label, systemImage: type.sfSymbol)
-                                .tag(type)
+                    NavigationLink {
+                        PinTypePicker(selection: $pinType, types: editableTypes)
+                    } label: {
+                        HStack {
+                            Text("Pin Type")
+                            Spacer()
+                            PinTypeIconView(pinType: pinType)
+                                .frame(width: 20, height: 20)
+                            Text(pinType.label)
+                                .foregroundColor(.secondary)
                         }
                     }
-                    .pickerStyle(.menu)
                 }
             }
             .navigationTitle("Edit Pin")
@@ -166,6 +171,7 @@ public struct PinViewDialog: View {
     let pin: NatoPin
     let coordMode: CoordMode
     @Binding var isPresented: Bool
+    let isAuthor: Bool
     let onSaveToPhotos: ((String) -> Void)?
     let onSaveToFiles: ((String) -> Void)?
     let onEdit: (() -> Void)?
@@ -175,6 +181,7 @@ public struct PinViewDialog: View {
         pin: NatoPin,
         isPresented: Binding<Bool>,
         coordMode: CoordMode = .mgrs,
+        isAuthor: Bool = false,
         onSaveToPhotos: ((String) -> Void)? = nil,
         onSaveToFiles: ((String) -> Void)? = nil,
         onEdit: (() -> Void)? = nil,
@@ -183,6 +190,7 @@ public struct PinViewDialog: View {
         self.pin = pin
         self.coordMode = coordMode
         self._isPresented = isPresented
+        self.isAuthor = isAuthor
         self.onSaveToPhotos = onSaveToPhotos
         self.onSaveToFiles = onSaveToFiles
         self.onEdit = onEdit
@@ -195,9 +203,7 @@ public struct PinViewDialog: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // Pin type icon and title
                     HStack {
-                        Image(systemName: pin.type.sfSymbol)
-                            .font(.title)
-                            .foregroundColor(.blue)
+                        NatoPinIconView(pinType: pin.type, size: 28, color: iconColor)
 
                         Text(displayTitle)
                             .font(.title2)
@@ -231,19 +237,29 @@ public struct PinViewDialog: View {
                     if let photoUri = pin.photoUri, !photoUri.isEmpty {
                         Divider()
 
-                        // Photo placeholder - in real app would load actual image
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color(.systemGray5))
-                                .frame(height: 200)
+                        // Decode base64 image and display
+                        if let imageData = Data(base64Encoded: photoUri),
+                           let uiImage = UIImage(data: imageData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 300)
+                                .cornerRadius(8)
+                        } else {
+                            // Fallback placeholder if decoding fails
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(.systemGray5))
+                                    .frame(height: 200)
 
-                            VStack {
-                                Image(systemName: "photo")
-                                    .font(.largeTitle)
-                                    .foregroundColor(.secondary)
-                                Text("Photo attached")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                VStack {
+                                    Image(systemName: "photo")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                    Text("Photo attached")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
 
@@ -288,7 +304,7 @@ public struct PinViewDialog: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
-                        if onEdit != nil {
+                        if isAuthor && onEdit != nil {
                             Button {
                                 onEdit?()
                             } label: {
@@ -339,6 +355,23 @@ public struct PinViewDialog: View {
             return String(format: "%.6f, %.6f", pin.latitude, pin.longitude)
         }
     }
+
+    private var iconColor: Color {
+        switch pin.type {
+        case .infantry, .marine:
+            return .red
+        case .intelligence, .surveillance, .droneObserved:
+            return .orange
+        case .artillery:
+            return .purple
+        case .op:
+            return .green
+        case .photo:
+            return .blue
+        case .form7S, .formIFS:
+            return .gray
+        }
+    }
 }
 
 // MARK: - Pin Create Dialog
@@ -348,6 +381,7 @@ public struct PinCreateDialog: View {
     @Binding var isPresented: Bool
     let latitude: Double
     let longitude: Double
+    let preselectedType: NatoType?
     let onConfirm: (NatoPin) -> Void
 
     @State private var title = ""
@@ -371,11 +405,13 @@ public struct PinCreateDialog: View {
         isPresented: Binding<Bool>,
         latitude: Double,
         longitude: Double,
+        pinType: NatoType? = nil,
         onConfirm: @escaping (NatoPin) -> Void
     ) {
         self._isPresented = isPresented
         self.latitude = latitude
         self.longitude = longitude
+        self.preselectedType = pinType
         self.onConfirm = onConfirm
     }
 
@@ -391,14 +427,33 @@ public struct PinCreateDialog: View {
                         .focused($focusedField, equals: .description)
                 }
 
-                Section("Type") {
-                    Picker("Pin Type", selection: $pinType) {
-                        ForEach(createableTypes, id: \.self) { type in
-                            Label(type.label, systemImage: type.sfSymbol)
-                                .tag(type)
+                // Only show type picker if no type was preselected
+                if preselectedType == nil {
+                    Section("Type") {
+                        NavigationLink {
+                            PinTypePicker(selection: $pinType, types: createableTypes)
+                        } label: {
+                            HStack {
+                                Text("Pin Type")
+                                Spacer()
+                                PinTypeIconView(pinType: pinType)
+                                    .frame(width: 20, height: 20)
+                                Text(pinType.label)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
-                    .pickerStyle(.menu)
+                } else {
+                    Section("Type") {
+                        HStack {
+                            Text("Pin Type")
+                            Spacer()
+                            PinTypeIconView(pinType: pinType)
+                                .frame(width: 20, height: 20)
+                            Text(pinType.label)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section("Location") {
@@ -435,6 +490,10 @@ public struct PinCreateDialog: View {
                 }
             }
             .onAppear {
+                // Set the preselected type if provided
+                if let preselected = preselectedType {
+                    pinType = preselected
+                }
                 focusedField = .title
             }
         }
@@ -488,6 +547,75 @@ public struct PinDeleteConfirmation: View {
             }
         }
         .padding()
+    }
+}
+
+// MARK: - Pin Type Icon View
+
+/// Helper view to render pin type icons with black color
+struct PinTypeIconView: View {
+    let pinType: NatoType
+
+    var body: some View {
+        switch pinType {
+        case .infantry:
+            FlagPinIcon(color: .black)
+        case .intelligence:
+            EyePinIcon(color: .black)
+        case .surveillance:
+            SurveillancePinIcon(color: .black)
+        case .artillery:
+            MilitaryTechIcon()
+                .fill(Color.black)
+        case .marine:
+            AnchorPinIcon(color: .black)
+        case .droneObserved:
+            DronePinIcon()
+                .fill(Color.black)
+        case .op:
+            TentIcon(color: .black)
+        case .photo:
+            CameraPinIcon(color: .black)
+        case .form7S:
+            DocumentPinIcon(color: .black)
+        case .formIFS:
+            IFSMissileIcon()
+                .fill(Color.black)
+        }
+    }
+}
+
+// MARK: - Pin Type Picker
+
+/// Custom picker for selecting pin types with proper icon rendering
+struct PinTypePicker: View {
+    @Binding var selection: NatoType
+    let types: [NatoType]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            ForEach(types, id: \.self) { type in
+                Button {
+                    selection = type
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        PinTypeIconView(pinType: type)
+                            .frame(width: 24, height: 24)
+                        Text(type.label)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        if type == selection {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Select Pin Type")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

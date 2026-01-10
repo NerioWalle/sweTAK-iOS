@@ -8,12 +8,89 @@ public struct CoordinateFormatter {
     // MARK: - MGRS Formatting
 
     /// Convert latitude/longitude to MGRS string
-    /// Note: Full MGRS implementation requires the MGRS library
-    /// This is a placeholder that will need the actual library integration
+    /// Format: <Grid Zone><Band><100km Square><Easting><Northing>
+    /// Example: 33U UP 12345 67890
     public static func toMGRS(latitude: Double, longitude: Double, precision: Int = 5) -> String {
-        // Placeholder - actual implementation requires MGRS library
-        // For now, return a formatted lat/lon as fallback
-        return formatDecimal(latitude: latitude, longitude: longitude)
+        // Handle polar regions (not standard UTM)
+        guard latitude >= -80 && latitude <= 84 else {
+            return formatDecimal(latitude: latitude, longitude: longitude)
+        }
+
+        // Calculate UTM zone (1-60)
+        var zone = Int((longitude + 180) / 6) + 1
+
+        // Handle Norway/Svalbard exceptions
+        if latitude >= 56 && latitude < 64 && longitude >= 3 && longitude < 12 {
+            zone = 32
+        } else if latitude >= 72 && latitude < 84 {
+            if longitude >= 0 && longitude < 9 { zone = 31 }
+            else if longitude >= 9 && longitude < 21 { zone = 33 }
+            else if longitude >= 21 && longitude < 33 { zone = 35 }
+            else if longitude >= 33 && longitude < 42 { zone = 37 }
+        }
+
+        // Calculate latitude band letter (C-X, excluding I and O)
+        let bandLetters = "CDEFGHJKLMNPQRSTUVWX"
+        let bandIndex = min(max(Int((latitude + 80) / 8), 0), bandLetters.count - 1)
+        let band = String(bandLetters[bandLetters.index(bandLetters.startIndex, offsetBy: bandIndex)])
+
+        // Calculate UTM coordinates
+        let (easting, northing) = latLonToUTM(latitude: latitude, longitude: longitude, zone: zone)
+
+        // Calculate 100km square identifier
+        let col = Int(easting / 100000)
+        let row = Int(northing / 100000) % 20
+
+        // Column letters (A-H, J-N, P-Z, repeating every 3 zones)
+        let setNumber = (zone - 1) % 3
+        let colLetters: [String] = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"]
+        let colLetter = String(colLetters[setNumber][colLetters[setNumber].index(colLetters[setNumber].startIndex, offsetBy: (col - 1) % 8)])
+
+        // Row letters (A-V excluding I and O, repeating)
+        let rowLetters = "ABCDEFGHJKLMNPQRSTUV"
+        let rowOffset = (zone % 2 == 0) ? 5 : 0
+        let rowIndex = (row + rowOffset) % 20
+        let rowLetter = String(rowLetters[rowLetters.index(rowLetters.startIndex, offsetBy: rowIndex)])
+
+        // Get easting and northing within 100km square
+        let e = Int(easting) % 100000
+        let n = Int(northing) % 100000
+
+        // Format based on precision (1-5)
+        let divisor = Int(pow(10.0, Double(5 - precision)))
+        let eStr = String(format: "%0\(precision)d", e / divisor)
+        let nStr = String(format: "%0\(precision)d", n / divisor)
+
+        return "\(zone)\(band) \(colLetter)\(rowLetter) \(eStr) \(nStr)"
+    }
+
+    /// Convert lat/lon to UTM easting/northing
+    private static func latLonToUTM(latitude: Double, longitude: Double, zone: Int) -> (Double, Double) {
+        let k0 = 0.9996
+        let a = 6378137.0 // WGS84 semi-major axis
+        let e2 = 0.00669438 // WGS84 eccentricity squared
+
+        let latRad = latitude * .pi / 180
+        let lonRad = longitude * .pi / 180
+        let lonOrigin = Double((zone - 1) * 6 - 180 + 3) * .pi / 180
+
+        let N = a / sqrt(1 - e2 * sin(latRad) * sin(latRad))
+        let T = tan(latRad) * tan(latRad)
+        let C = e2 / (1 - e2) * cos(latRad) * cos(latRad)
+        let A = cos(latRad) * (lonRad - lonOrigin)
+
+        let M = a * ((1 - e2/4 - 3*e2*e2/64) * latRad
+                     - (3*e2/8 + 3*e2*e2/32) * sin(2*latRad)
+                     + (15*e2*e2/256) * sin(4*latRad))
+
+        let easting = k0 * N * (A + (1-T+C) * A*A*A/6 + (5-18*T+T*T) * pow(A, 5)/120) + 500000
+        var northing = k0 * (M + N * tan(latRad) * (A*A/2 + (5-T+9*C+4*C*C) * pow(A, 4)/24))
+
+        if latitude < 0 {
+            northing += 10000000
+        }
+
+        return (easting, northing)
     }
 
     // MARK: - Decimal Degrees
@@ -64,6 +141,63 @@ public struct CoordinateFormatter {
         case .latLon:
             return formatDecimal(latitude: latitude, longitude: longitude)
         }
+    }
+
+    /// Format coordinates based on the CoordinateFormat setting
+    public static func format(
+        latitude: Double,
+        longitude: Double,
+        format: CoordinateFormat
+    ) -> String {
+        switch format {
+        case .mgrs:
+            return toMGRS(latitude: latitude, longitude: longitude)
+        case .decimal:
+            return formatDecimal(latitude: latitude, longitude: longitude)
+        case .dms:
+            return formatDMS(latitude: latitude, longitude: longitude)
+        case .utm:
+            return formatUTM(latitude: latitude, longitude: longitude)
+        }
+    }
+
+    // MARK: - UTM Formatting
+
+    /// Format as UTM (e.g., "34T 123456 6789012")
+    public static func formatUTM(latitude: Double, longitude: Double) -> String {
+        // Calculate UTM zone
+        let zone = Int((longitude + 180) / 6) + 1
+
+        // Calculate zone letter
+        let letters = "CDEFGHJKLMNPQRSTUVWX"
+        let letterIndex = Int((latitude + 80) / 8)
+        let letter = letterIndex >= 0 && letterIndex < letters.count
+            ? String(letters[letters.index(letters.startIndex, offsetBy: min(letterIndex, letters.count - 1))])
+            : "N"
+
+        // Simplified UTM calculation (approximate)
+        let lonOrigin = Double((zone - 1) * 6 - 180 + 3) * .pi / 180
+        let latRad = latitude * .pi / 180
+        let lonRad = longitude * .pi / 180
+
+        let k0 = 0.9996
+        let a = 6378137.0 // WGS84 semi-major axis
+        let e2 = 0.00669438 // WGS84 eccentricity squared
+
+        let N = a / sqrt(1 - e2 * sin(latRad) * sin(latRad))
+        let T = tan(latRad) * tan(latRad)
+        let C = e2 / (1 - e2) * cos(latRad) * cos(latRad)
+        let A = cos(latRad) * (lonRad - lonOrigin)
+
+        let M = a * ((1 - e2/4 - 3*e2*e2/64) * latRad
+                     - (3*e2/8 + 3*e2*e2/32) * sin(2*latRad)
+                     + (15*e2*e2/256) * sin(4*latRad))
+
+        let easting = k0 * N * (A + (1-T+C) * A*A*A/6) + 500000
+        let northing = k0 * (M + N * tan(latRad) * (A*A/2 + (5-T+9*C+4*C*C) * A*A*A*A/24))
+        let adjustedNorthing = latitude < 0 ? northing + 10000000 : northing
+
+        return String(format: "%d%@ %.0f %.0f", zone, letter, easting, adjustedNorthing)
     }
 
     // MARK: - Distance Formatting

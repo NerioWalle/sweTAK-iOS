@@ -8,7 +8,8 @@ public struct OrdersListScreen: View {
 
     @State private var selectedTab = 0
     @State private var selectedOrder: Order?
-    @State private var showingOrderDetail = false
+    @State private var showingCreateOBO = false
+    @State private var showingCreateFiveP = false
 
     public init() {}
 
@@ -48,11 +49,31 @@ public struct OrdersListScreen: View {
                         dismiss()
                     }
                 }
-            }
-            .sheet(isPresented: $showingOrderDetail) {
-                if let order = selectedOrder {
-                    OrderDetailScreen(order: order)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button {
+                            showingCreateOBO = true
+                        } label: {
+                            Label("OBO Order", systemImage: "doc.text")
+                        }
+                        Button {
+                            showingCreateFiveP = true
+                        } label: {
+                            Label("5P Order", systemImage: "list.number")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
+            }
+            .sheet(item: $selectedOrder) { order in
+                OrderDetailScreen(order: order)
+            }
+            .sheet(isPresented: $showingCreateOBO) {
+                CreateOBOOrderScreen()
+            }
+            .sheet(isPresented: $showingCreateFiveP) {
+                CreateFivePOrderScreen()
             }
         }
     }
@@ -100,13 +121,11 @@ public struct OrdersListScreen: View {
                     recipientStatuses: ordersVM.getRecipientStatuses(forOrder: order.id)
                 )
                 .onTapGesture {
-                    selectedOrder = order
-                    showingOrderDetail = true
-
                     // Mark as read when opening
                     if order.direction == .incoming && !order.isRead {
                         ordersVM.markAsRead(order)
                     }
+                    selectedOrder = order
                 }
             }
         }
@@ -120,6 +139,13 @@ private struct OrderListItem: View {
     let order: Order
     let recipientStatuses: [OrderRecipientStatus]
 
+    private var typeColor: Color {
+        switch order.type {
+        case .obo: return .blue
+        case .fiveP: return .purple
+        }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             // Unread indicator
@@ -130,11 +156,17 @@ private struct OrderListItem: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                // Header row
+                // Header row with type badge
                 HStack {
+                    // Type badge
                     Text(order.type.displayName)
-                        .font(.headline)
-                        .foregroundColor(.blue)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(typeColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(typeColor.opacity(0.15))
+                        .cornerRadius(4)
 
                     Spacer()
 
@@ -191,6 +223,8 @@ public struct OrderDetailScreen: View {
 
     @ObservedObject private var ordersVM = OrdersViewModel.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showingDuplicateOBO = false
+    @State private var showingDuplicateFiveP = false
 
     public init(order: Order) {
         self.order = order
@@ -216,17 +250,68 @@ public struct OrderDetailScreen: View {
                     if order.direction == .outgoing && !order.recipientDeviceIds.isEmpty {
                         recipientStatusSection
                     }
+
+                    Divider()
+
+                    // Action buttons
+                    VStack(spacing: 12) {
+                        // Duplicate button
+                        Button {
+                            if order.type == .obo {
+                                showingDuplicateOBO = true
+                            } else {
+                                showingDuplicateFiveP = true
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.on.doc")
+                                Text("Duplicate Order")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+
+                        // Delete button
+                        Button(role: .destructive) {
+                            ordersVM.deleteOrder(order)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Delete Order")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                        }
+                    }
+                    .padding(.top, 8)
                 }
                 .padding()
             }
             .navigationTitle(order.type.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showingDuplicateOBO) {
+                CreateOBOOrderScreen(
+                    duplicateFrom: order
+                )
+            }
+            .sheet(isPresented: $showingDuplicateFiveP) {
+                CreateFivePOrderScreen(
+                    duplicateFrom: order
+                )
             }
         }
     }

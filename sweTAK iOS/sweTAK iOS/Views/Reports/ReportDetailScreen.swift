@@ -8,6 +8,7 @@ public struct ReportDetailScreen: View {
     @ObservedObject private var contactsVM = ContactsViewModel.shared
 
     let report: Report
+    @State private var showingDuplicate = false
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -51,11 +52,14 @@ public struct ReportDetailScreen: View {
             .navigationTitle("PEDARS Report")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close") {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showingDuplicate) {
+                CreateReportScreen(duplicateFrom: report)
             }
         }
     }
@@ -188,14 +192,38 @@ public struct ReportDetailScreen: View {
     // MARK: - Delete Section
 
     private var deleteSection: some View {
-        Button(role: .destructive) {
-            reportsVM.deleteReport(reportId: report.id)
-            dismiss()
-        } label: {
-            Label("Delete Report", systemImage: "trash")
+        VStack(spacing: 12) {
+            // Duplicate button
+            Button {
+                showingDuplicate = true
+            } label: {
+                HStack {
+                    Image(systemName: "doc.on.doc")
+                    Text("Duplicate Report")
+                }
                 .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+            }
+
+            // Delete button
+            Button(role: .destructive) {
+                reportsVM.deleteReport(reportId: report.id)
+                dismiss()
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Delete Report")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.red)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+            }
         }
-        .buttonStyle(.bordered)
         .padding(.top, 16)
     }
 }

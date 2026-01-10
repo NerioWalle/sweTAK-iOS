@@ -20,6 +20,13 @@ public final class ReportsViewModel: ObservableObject {
     @Published public private(set) var recipientStatuses: [ReportRecipientStatus] = []
     @Published public private(set) var unreadIncomingCount: Int = 0
 
+    // MARK: - Incoming Notification
+
+    private let incomingNotificationSubject = PassthroughSubject<Report, Never>()
+    public var incomingNotification: AnyPublisher<Report, Never> {
+        incomingNotificationSubject.eraseToAnyPublisher()
+    }
+
     // MARK: - UserDefaults Keys
 
     private enum Keys {
@@ -140,6 +147,9 @@ public final class ReportsViewModel: ObservableObject {
         reports.append(incomingReport)
         saveReports()
         updateUnreadCount()
+
+        // Emit notification for UI banner
+        incomingNotificationSubject.send(incomingReport)
 
         // Send delivery ACK
         sendAck(reportId: incomingReport.id, toDeviceId: incomingReport.senderDeviceId, ackType: .delivered)

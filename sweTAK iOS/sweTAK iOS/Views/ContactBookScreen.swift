@@ -111,8 +111,8 @@ public struct ContactBookScreen: View {
                 }
             }
 
-            // Other contacts section
-            Section("Contacts (\(contactsVM.contacts.count))") {
+            // Other contacts section (deduplicated)
+            Section("Contacts (\(sortedContacts.filter { $0.deviceId != TransportCoordinator.shared.deviceId }.count))") {
                 ForEach(sortedContacts) { contact in
                     let isMe = contact.deviceId == TransportCoordinator.shared.deviceId
                     if !isMe {
@@ -142,10 +142,29 @@ public struct ContactBookScreen: View {
         }
     }
 
-    // MARK: - Sorted Contacts
+    // MARK: - Sorted Contacts (deduplicated by callsign + nickname)
 
     private var sortedContacts: [ContactProfile] {
-        contactsVM.contacts.sorted { a, b in
+        // Group contacts by callsign + nickname combination
+        var uniqueContacts: [String: ContactProfile] = [:]
+
+        for contact in contactsVM.contacts {
+            let key = "\(contact.callsign ?? "")||\(contact.nickname ?? "")"
+
+            if let existing = uniqueContacts[key] {
+                // Keep the one with more recent lastSeenAt
+                let existingDate = existing.lastSeenAt ?? Date.distantPast
+                let newDate = contact.lastSeenAt ?? Date.distantPast
+                if newDate > existingDate {
+                    uniqueContacts[key] = contact
+                }
+            } else {
+                uniqueContacts[key] = contact
+            }
+        }
+
+        // Sort by name
+        return uniqueContacts.values.sorted { a, b in
             let aName = (a.callsign ?? a.nickname ?? "Unknown").lowercased()
             let bName = (b.callsign ?? b.nickname ?? "Unknown").lowercased()
             return aName < bName
@@ -361,7 +380,7 @@ private struct ContactDetailSheet: View {
                         DetailRow(label: "Company", value: company)
                     }
                     if let platoon = contact.platoon {
-                        DetailRow(label: "Platoon", value: platoon)
+                        DetailRow(label: "Platoon/Troop", value: platoon)
                     }
                     if let squad = contact.squad {
                         DetailRow(label: "Squad", value: squad)

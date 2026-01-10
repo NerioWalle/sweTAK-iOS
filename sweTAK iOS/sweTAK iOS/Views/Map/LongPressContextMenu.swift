@@ -150,13 +150,9 @@ public struct LongPressContextMenu: View {
         Divider()
             .padding(.horizontal)
 
-        // Pin types
+        // Pin types with custom icons
         ForEach(availablePinTypes, id: \.self) { pinType in
-            MenuRow(
-                icon: pinType.sfSymbol,
-                title: pinType.label,
-                color: .blue
-            ) {
+            PinMenuRow(pinType: pinType, title: pinType.label) {
                 onPinChosen(pinType)
                 dismiss()
             }
@@ -250,6 +246,66 @@ private struct MenuRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Pin Menu Row
+
+/// Menu row with custom pin type icon
+private struct PinMenuRow: View {
+    let pinType: NatoType
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                pinIcon
+                    .frame(width: 24, height: 24)
+
+                Text(title)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var pinIcon: some View {
+        switch pinType {
+        case .infantry:
+            FlagPinIcon(color: .black)
+        case .intelligence:
+            EyePinIcon(color: .black)
+        case .surveillance:
+            SurveillancePinIcon(color: .black)
+        case .artillery:
+            MilitaryTechIcon()
+                .fill(Color.black)
+        case .marine:
+            AnchorPinIcon(color: .black)
+        case .droneObserved:
+            DronePinIcon()
+                .fill(Color.black)
+        case .op:
+            TentIcon(color: .black)
+        case .photo:
+            CameraPinIcon(color: .black)
+        case .form7S:
+            DocumentPinIcon(color: .black)
+        case .formIFS:
+            IFSMissileIcon()
+                .fill(Color.black)
+        }
     }
 }
 
