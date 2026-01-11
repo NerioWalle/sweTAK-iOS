@@ -63,6 +63,11 @@ public struct MainView: View {
     // User location screen position (updated by timer for smooth line rendering)
     @State private var userLocationScreenPoint: CGPoint? = nil
 
+    // Device tilt state for auto map orientation (with hysteresis)
+    @State private var isDeviceRaised: Bool = false
+    private let tiltThreshold: Double = 55.0  // Switch to north-up above this angle
+    private let tiltHysteresis: Double = 5.0  // Hysteresis to prevent rapid switching
+
     // Timer for smooth crosshair line updates
     private let lineUpdateTimer = Timer.publish(every: 1.0/30.0, on: .main, in: .common).autoconnect()
 
@@ -319,6 +324,20 @@ public struct MainView: View {
         .onDisappear {
             // Re-enable screen auto-lock when leaving map view
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .onChange(of: locationManager.devicePitch) { _, pitch in
+            // Apply hysteresis to prevent rapid switching near threshold
+            if isDeviceRaised {
+                // Currently raised - switch to not raised below (threshold - hysteresis)
+                if pitch < (tiltThreshold - tiltHysteresis) {
+                    isDeviceRaised = false
+                }
+            } else {
+                // Currently not raised - switch to raised above threshold
+                if pitch > tiltThreshold {
+                    isDeviceRaised = true
+                }
+            }
         }
         .task(id: crosshairPositionKey) {
             // Fetch elevation when crosshair position changes
@@ -870,10 +889,10 @@ public struct MainView: View {
     // MARK: - Map View
 
     private var mapView: some View {
-        // Auto-switch to north-up when device is tilted > 70 degrees (vertical position)
-        let effectiveOrientationMode: MapOrientationMode = locationManager.devicePitch > 70
-            ? .northUp
-            : mapVM.mapOrientation
+        // Auto-switch map orientation based on device tilt with hysteresis
+        // Raised (> 55° from horizontal) = north-up mode
+        // Flat (< 50° from horizontal) = use user's selected mode
+        let effectiveOrientationMode: MapOrientationMode = isDeviceRaised ? .northUp : mapVM.mapOrientation
 
         return MapViewRepresentable(
             region: $mapVM.cameraRegion,
