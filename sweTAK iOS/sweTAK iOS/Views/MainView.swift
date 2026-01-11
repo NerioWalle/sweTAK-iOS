@@ -4,6 +4,74 @@ import Photos
 import UniformTypeIdentifiers
 import UIKit
 
+// MARK: - Sheet Type Enum
+/// Consolidated sheet type to avoid SwiftUI's multiple .sheet modifier limitation
+enum MainViewSheet: Identifiable {
+    case contacts
+    case chat
+    case directChat(IncomingChatNotification)
+    case settings
+    case orders
+    case profile
+    case about
+    case peerDetail(PeerPosition)
+    case createOBOOrder
+    case createFivePOrder
+    case createPedars
+    case createMist
+    case listReports
+    case createMethane
+    case listRequests
+    case routes
+    case addPin
+    case lightingMenu
+    case pinDetails(NatoPin)
+    case sevenSForm
+    case ifsForm
+    case photoPicker
+    case editSevenSForm
+    case editIFSForm
+    case pinCreateDialog
+    case coordinateInput
+    case pedarsReportDetail(Report)
+    case mistReportDetail(MedevacReport)
+    case peerFullProfile(PeerPosition)
+
+    var id: String {
+        switch self {
+        case .contacts: return "contacts"
+        case .chat: return "chat"
+        case .directChat(let n): return "directChat-\(n.threadId)"
+        case .settings: return "settings"
+        case .orders: return "orders"
+        case .profile: return "profile"
+        case .about: return "about"
+        case .peerDetail(let p): return "peerDetail-\(p.deviceId)"
+        case .createOBOOrder: return "createOBOOrder"
+        case .createFivePOrder: return "createFivePOrder"
+        case .createPedars: return "createPedars"
+        case .createMist: return "createMist"
+        case .listReports: return "listReports"
+        case .createMethane: return "createMethane"
+        case .listRequests: return "listRequests"
+        case .routes: return "routes"
+        case .addPin: return "addPin"
+        case .lightingMenu: return "lightingMenu"
+        case .pinDetails(let p): return "pinDetails-\(p.id)"
+        case .sevenSForm: return "sevenSForm"
+        case .ifsForm: return "ifsForm"
+        case .photoPicker: return "photoPicker"
+        case .editSevenSForm: return "editSevenSForm"
+        case .editIFSForm: return "editIFSForm"
+        case .pinCreateDialog: return "pinCreateDialog"
+        case .coordinateInput: return "coordinateInput"
+        case .pedarsReportDetail(let r): return "pedarsReport-\(r.id)"
+        case .mistReportDetail(let r): return "mistReport-\(r.id)"
+        case .peerFullProfile(let p): return "peerFullProfile-\(p.deviceId)"
+        }
+    }
+}
+
 /// Main view of the app containing the map and overlay controls
 /// Redesigned to match Android MapScreen layout with overlay-based navigation
 public struct MainView: View {
@@ -18,7 +86,10 @@ public struct MainView: View {
     @ObservedObject private var pinsVM = PinsViewModel.shared
     @ObservedObject private var routesVM = RoutesViewModel.shared
 
-    // Sheet presentation state
+    // Consolidated sheet presentation state (fixes SwiftUI multiple .sheet limitation)
+    @State private var activeSheet: MainViewSheet? = nil
+
+    // Legacy sheet state (for sheets not yet migrated)
     @State private var showingContacts = false
     @State private var showingChat = false
     @State private var directChatNotification: IncomingChatNotification? = nil
@@ -29,7 +100,7 @@ public struct MainView: View {
     @State private var showingAddPin = false
     @State private var showingAbout = false
 
-    // Orders/Reports/Requests sheet state
+    // Orders/Reports/Requests sheet state - NOW USING activeSheet
     @State private var showingCreateOBOOrder = false
     @State private var showingCreateFivePOrder = false
     @State private var showingCreatePedars = false
@@ -42,6 +113,9 @@ public struct MainView: View {
     @State private var showingLayerMenu = false
     @State private var showingLightingMenu = false
     @State private var showingMessagingMenu = false
+    @State private var showingLanMenu = false
+    @State private var showingPinsMenu = false
+    @State private var showingSettingsMenu = false
 
     // Long-press context menu state
     @State private var showingLongPressMenu = false
@@ -219,27 +293,6 @@ public struct MainView: View {
                 )
             }
 
-            // UI Overlays
-            GeometryReader { geometry in
-                let isLandscape = geometry.size.width > geometry.size.height
-                let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
-
-                VStack(spacing: 0) {
-                    // Top control panel (Layers, Lighting, Messaging)
-                    topControlPanel
-                        .padding(.top, geometry.safeAreaInsets.top + topPadding)
-                        .padding(.horizontal, sidePadding)
-
-                    Spacer()
-
-                    // HUD overlay at bottom-left
-                    fullHudOverlay
-                        .padding(.horizontal, sidePadding)
-                        .padding(.bottom, max(32, geometry.safeAreaInsets.bottom))
-                }
-            }
-
             // Bottom-right map controls
             VStack {
                 Spacer()
@@ -251,33 +304,16 @@ public struct MainView: View {
                 }
             }
 
-            // Compass and Heading HUD (top-left, below top bar)
-            GeometryReader { geometry in
-                let isLandscape = geometry.size.width > geometry.size.height
-                let topPadding: CGFloat = isLandscape ? 16 : 48
-                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
-
-                VStack(alignment: .center, spacing: 8) {
-                    Spacer()
-                        .frame(height: geometry.safeAreaInsets.top + topPadding + 68)
-
-                    // Compass needle showing north
-                    compassNeedleView
-
-                    // Heading angle display
-                    headingAngleView
-                }
-                .padding(.leading, sidePadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // Notification banners overlay - only render when there are notifications
+            if hasPendingNotifications {
+                notificationBannersOverlay
             }
-
-            // Notification banners overlay
-            notificationBannersOverlay
 
             // Route planning overlay (when in planning mode)
             RoutePlanningOverlay(planningState: planningState) { route in
                 routesVM.addPlannedRoute(route)
             }
+            .allowsHitTesting(planningState.isPlanning)
 
             // Toast notification overlay
             if showingBroadcastConfirmation {
@@ -300,11 +336,50 @@ public struct MainView: View {
                     .padding(.bottom, 100)
                 }
                 .transition(.opacity)
+                .allowsHitTesting(false)
                 .onAppear {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         withAnimation {
                             showingBroadcastConfirmation = false
                         }
+                    }
+                }
+            }
+
+            // UI Overlays - MUST BE LAST so menu popups appear on top
+            GeometryReader { geometry in
+                let isLandscape = geometry.size.width > geometry.size.height
+                let topPadding: CGFloat = isLandscape ? 16 : 48
+                let sidePadding: CGFloat = isLandscape ? 48 : max(32, geometry.safeAreaInsets.leading)
+
+                ZStack(alignment: .topLeading) {
+                    // Compass and Heading HUD (top-left, below top bar) - placed first so menus appear on top
+                    VStack(alignment: .center, spacing: 8) {
+                        // Compass needle showing north
+                        compassNeedleView
+                            .frame(width: 100)
+
+                        // Heading angle display
+                        headingAngleView
+                            .frame(width: 100)
+                    }
+                    .fixedSize()  // Constrain to content size only
+                    .padding(.top, geometry.safeAreaInsets.top + topPadding + 68)
+                    .padding(.leading, sidePadding)
+
+                    // Top control panel and HUD - placed second so it's on top for touch handling
+                    VStack(spacing: 0) {
+                        // Top control panel (Layers, Lighting, Messaging)
+                        topControlPanel
+                            .padding(.top, geometry.safeAreaInsets.top + topPadding)
+                            .padding(.horizontal, sidePadding)
+
+                        Spacer()
+
+                        // HUD overlay at bottom-left
+                        fullHudOverlay
+                            .padding(.horizontal, sidePadding)
+                            .padding(.bottom, max(32, geometry.safeAreaInsets.bottom))
                     }
                 }
             }
@@ -360,13 +435,17 @@ public struct MainView: View {
                 }
             }
         }
-        // Sheet presentations
+        // MARK: - Consolidated Sheet Presentation
+        // This single .sheet(item:) handles all sheets via the activeSheet enum
+        // to fix SwiftUI's limitation with multiple .sheet modifiers
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
+        // Legacy sheet presentations (only for sheets NOT handled by activeSheet)
         .sheet(isPresented: $showingContacts) {
             ContactBookScreen()
         }
-        .sheet(isPresented: $showingChat) {
-            ChatThreadsScreen()
-        }
+        // Note: showingChat, showingOrders, showingCreateOBOOrder, etc. are now handled by activeSheet
         .sheet(item: $directChatNotification) { notification in
             ChatScreen(
                 threadId: notification.threadId,
@@ -376,9 +455,6 @@ public struct MainView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsScreen()
-        }
-        .sheet(isPresented: $showingOrders) {
-            OrdersListScreen()
         }
         .sheet(isPresented: $showingProfile) {
             ProfileScreen()
@@ -390,42 +466,6 @@ public struct MainView: View {
         .sheet(isPresented: $showingPeerDetail) {
             if let peer = selectedPeerForDetail {
                 PeerFullProfileSheetView(peer: peer)
-            }
-        }
-        // Orders creation sheets
-        .sheet(isPresented: $showingCreateOBOOrder) {
-            NavigationStack {
-                CreateOBOOrderScreen()
-            }
-        }
-        .sheet(isPresented: $showingCreateFivePOrder) {
-            NavigationStack {
-                CreateFivePOrderScreen()
-            }
-        }
-        // Reports creation sheets
-        .sheet(isPresented: $showingCreatePedars) {
-            NavigationStack {
-                CreateReportScreen()
-            }
-        }
-        .sheet(isPresented: $showingCreateMist) {
-            NavigationStack {
-                CreateMedevacScreen()
-            }
-        }
-        .sheet(isPresented: $showingListReports) {
-            CombinedReportsListView()
-        }
-        // Requests sheets
-        .sheet(isPresented: $showingCreateMethane) {
-            NavigationStack {
-                CreateMethaneScreen()
-            }
-        }
-        .sheet(isPresented: $showingListRequests) {
-            NavigationStack {
-                MethaneListScreen()
             }
         }
         .sheet(isPresented: $showingRoutes) {
@@ -656,6 +696,226 @@ public struct MainView: View {
             } else {
                 print("MainView: Notification already exists for \(notification.threadId)")
             }
+        }
+    }
+
+    // MARK: - Sheet Content Builder
+
+    /// Builds the content view for the consolidated sheet presentation
+    /// This is extracted to help the Swift compiler with type-checking
+    @ViewBuilder
+    private func sheetContent(for sheet: MainViewSheet) -> some View {
+        switch sheet {
+        case .contacts:
+            ContactBookScreen()
+        case .chat:
+            ChatThreadsScreen()
+        case .directChat(let notification):
+            ChatScreen(
+                threadId: notification.threadId,
+                peerCallsign: notification.callsign,
+                peerNickname: notification.nickname
+            )
+        case .settings:
+            SettingsScreen()
+        case .orders:
+            OrdersListScreen()
+        case .profile:
+            ProfileScreen()
+        case .about:
+            AboutScreen()
+        case .peerDetail(let peer):
+            PeerFullProfileSheetView(peer: peer)
+        case .createOBOOrder:
+            NavigationStack {
+                CreateOBOOrderScreen()
+            }
+        case .createFivePOrder:
+            NavigationStack {
+                CreateFivePOrderScreen()
+            }
+        case .createPedars:
+            NavigationStack {
+                CreateReportScreen()
+            }
+        case .createMist:
+            NavigationStack {
+                CreateMedevacScreen()
+            }
+        case .listReports:
+            CombinedReportsListView()
+        case .createMethane:
+            NavigationStack {
+                CreateMethaneScreen()
+            }
+        case .listRequests:
+            NavigationStack {
+                MethaneListScreen()
+            }
+        case .routes:
+            RoutesListSheet()
+        case .addPin:
+            if let location = locationManager.currentCoordinate ?? mapVM.crosshairPosition {
+                AddPinSheet(location: location) { pin in
+                    pinsVM.addPin(pin)
+                }
+            }
+        case .lightingMenu:
+            LightingControlMenu(
+                isPresented: Binding(
+                    get: { activeSheet != nil },
+                    set: { if !$0 { activeSheet = nil } }
+                ),
+                themeMode: $settingsVM.themeMode,
+                previousThemeMode: $previousThemeMode,
+                nightDimmerAlpha: $settingsVM.nightDimmerAlpha,
+                nightVisionColor: $settingsVM.nightVisionColor
+            )
+            .presentationDetents([.medium, .large])
+        case .pinDetails(let pin):
+            PinViewDialog(
+                pin: pin,
+                isPresented: Binding(
+                    get: { activeSheet != nil },
+                    set: { if !$0 { activeSheet = nil } }
+                ),
+                coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
+                isAuthor: pin.originDeviceId == TransportCoordinator.shared.deviceId,
+                onSaveToPhotos: { base64String in
+                    savePhotoToLibrary(base64String: base64String)
+                },
+                onSaveToFiles: { base64String in
+                    activeSheet = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        savePhotoToFiles(base64String: base64String)
+                    }
+                },
+                onEdit: {
+                    let pinToEdit = pin
+                    activeSheet = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        openEditFormForPin(pinToEdit)
+                    }
+                },
+                onDelete: {
+                    pinsVM.deletePin(pinId: pin.id)
+                    activeSheet = nil
+                }
+            )
+        case .sevenSForm:
+            SevenSFormSheet(
+                draft: SevenSFormData.createDraft(
+                    reporter: settingsVM.callsign,
+                    latitude: longPressCoordinate.latitude,
+                    longitude: longPressCoordinate.longitude,
+                    placeText: formatCoordinate(longPressCoordinate)
+                )
+            ) { formData in
+                let pin = NatoPin(
+                    id: pinsVM.generatePinId(),
+                    latitude: formData.latitude ?? longPressCoordinate.latitude,
+                    longitude: formData.longitude ?? longPressCoordinate.longitude,
+                    type: .form7S,
+                    title: "7S Report",
+                    description: format7SDescription(formData),
+                    authorCallsign: formData.reporter,
+                    originDeviceId: TransportCoordinator.shared.deviceId
+                )
+                pinsVM.addPin(pin)
+            }
+        case .ifsForm:
+            IndirectFireFormSheet(
+                draft: IndirectFireFormData.createDraft(
+                    observer: settingsVM.callsign,
+                    observerLatitude: locationManager.currentCoordinate?.latitude,
+                    observerLongitude: locationManager.currentCoordinate?.longitude,
+                    observerPositionText: locationManager.currentCoordinate.map { formatCoordinate($0) },
+                    targetLatitude: longPressCoordinate.latitude,
+                    targetLongitude: longPressCoordinate.longitude
+                ),
+                targetCoordinateText: formatCoordinate(longPressCoordinate)
+            ) { formData in
+                let pin = NatoPin(
+                    id: pinsVM.generatePinId(),
+                    latitude: formData.targetLatitude ?? longPressCoordinate.latitude,
+                    longitude: formData.targetLongitude ?? longPressCoordinate.longitude,
+                    type: .formIFS,
+                    title: "IFS Request",
+                    description: formatIFSDescription(formData),
+                    authorCallsign: formData.observer,
+                    originDeviceId: TransportCoordinator.shared.deviceId
+                )
+                pinsVM.addPin(pin)
+            }
+        case .photoPicker:
+            PhotoCaptureView(coordinate: longPressCoordinate) { image, location, subject, description in
+                saveGeotaggedPhoto(image: image, location: location, subject: subject, description: description)
+            }
+        case .editSevenSForm:
+            if let draft = sevenSEditDraft, let pinId = editingPinId {
+                SevenSFormSheet(draft: draft) { formData in
+                    if var existingPin = pinsVM.pins.first(where: { $0.id == pinId }) {
+                        existingPin.description = format7SDescription(formData)
+                        existingPin.authorCallsign = formData.reporter
+                        pinsVM.updatePin(existingPin)
+                    }
+                    editingPinId = nil
+                    sevenSEditDraft = nil
+                }
+            }
+        case .editIFSForm:
+            if let draft = ifsEditDraft, let pinId = editingPinId {
+                let targetCoord = CLLocationCoordinate2D(
+                    latitude: draft.targetLatitude ?? 0,
+                    longitude: draft.targetLongitude ?? 0
+                )
+                IndirectFireFormSheet(
+                    draft: draft,
+                    targetCoordinateText: formatCoordinate(targetCoord)
+                ) { formData in
+                    if var existingPin = pinsVM.pins.first(where: { $0.id == pinId }) {
+                        existingPin.description = formatIFSDescription(formData)
+                        existingPin.authorCallsign = formData.observer
+                        pinsVM.updatePin(existingPin)
+                    }
+                    editingPinId = nil
+                    ifsEditDraft = nil
+                }
+            }
+        case .pinCreateDialog:
+            PinCreateDialog(
+                isPresented: Binding(
+                    get: { activeSheet != nil },
+                    set: { if !$0 { activeSheet = nil } }
+                ),
+                latitude: longPressCoordinate.latitude,
+                longitude: longPressCoordinate.longitude,
+                pinType: pendingPinType
+            ) { pin in
+                pinsVM.addPin(pin)
+            }
+        case .coordinateInput:
+            CoordinateInputDialog(
+                coordMode: settingsVM.settings.coordFormat == .mgrs ? .mgrs : .latLon,
+                text: Binding(
+                    get: { coordinateInputText },
+                    set: { coordinateInputText = $0 }
+                ),
+                isPresented: Binding(
+                    get: { activeSheet != nil },
+                    set: { if !$0 { activeSheet = nil } }
+                ),
+                error: coordinateInputError,
+                onGoThere: { text in
+                    handleCoordinateInputForSheet(text)
+                }
+            )
+        case .pedarsReportDetail(let report):
+            ReportDetailScreen(report: report)
+        case .mistReportDetail(let report):
+            MedevacDetailScreen(report: report)
+        case .peerFullProfile(let peer):
+            PeerFullProfileSheetView(peer: peer)
         }
     }
 
@@ -966,16 +1226,16 @@ public struct MainView: View {
 
             Spacer()
 
-            // Right side: LAN, Messaging, Pins, and Settings
+            // Right side: Messaging, Pins, LAN, and Settings
             HStack(spacing: 8) {
-                // LAN menu (contains Contact Book and seen devices)
-                lanMenuButton
-
                 // Messaging menu button
                 messagingMenuButton
 
                 // Pins menu button
                 pinsMenuButton
+
+                // LAN menu (contains Contact Book and seen devices)
+                lanMenuButton
 
                 // Settings menu (contains My Profile, Settings, About)
                 settingsMenuButton
@@ -989,42 +1249,78 @@ public struct MainView: View {
     // MARK: - Layers Menu Button
 
     private var layersMenuButton: some View {
-        Menu {
-            // Map style section
-            Section("Map Style") {
-                ForEach(MapStyle.allCases, id: \.self) { style in
-                    Button {
-                        settingsVM.setFullMapStyle(style)
-                    } label: {
-                        HStack {
-                            Label(style.displayName, systemImage: style.icon)
-                            if settingsVM.currentMapStyle == style {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Routes section
-            Section("Routes") {
-                Button {
-                    planningState.startPlanning()
-                } label: {
-                    Label("Create Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
-                }
-
-                Button {
-                    showingRoutes = true
-                } label: {
-                    Label("List Routes", systemImage: "list.bullet")
-                }
-            }
+        Button {
+            showingLayerMenu = true
         } label: {
             Image(systemName: "map.fill")
                 .font(.title2)
                 .foregroundColor(.primary)
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .popover(isPresented: $showingLayerMenu, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Map Style section header
+                Text("Map Style")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+
+                ForEach(MapStyle.allCases, id: \.self) { style in
+                    Button {
+                        showingLayerMenu = false
+                        settingsVM.setFullMapStyle(style)
+                    } label: {
+                        HStack {
+                            Label(style.displayName, systemImage: style.icon)
+                            Spacer()
+                            if settingsVM.currentMapStyle == style {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                // Routes section header
+                Text("Routes")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
+
+                Button {
+                    showingLayerMenu = false
+                    planningState.startPlanning()
+                } label: {
+                    Label("Create Route", systemImage: "point.topleft.down.curvedto.point.bottomright.up")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showingLayerMenu = false
+                    showingRoutes = true
+                } label: {
+                    Label("List Routes", systemImage: "list.bullet")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 220)
+            .presentationCompactAdaptation(.popover)
         }
         .confirmationDialog("Breadcrumb Recording", isPresented: $showingRecordingControls) {
             if locationManager.isRecordingBreadcrumbs {
@@ -1075,68 +1371,60 @@ public struct MainView: View {
         }
     }
 
+    // MARK: - Sheet Presentation Helper
+
+    /// Ensures clean sheet presentation by resetting state first if needed
+    private func presentSheet(_ sheet: MainViewSheet) {
+        if activeSheet != nil {
+            // Reset first, then present after a brief delay
+            activeSheet = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                activeSheet = sheet
+            }
+        } else {
+            activeSheet = sheet
+        }
+    }
+
     // MARK: - Messaging Menu Button
 
     private var messagingMenuButton: some View {
-        MessagingMenuButton(
-            onOpenChat: { showingChat = true },
-            onCreateOBOOrder: { showingCreateOBOOrder = true },
-            onCreateFivePOrder: { showingCreateFivePOrder = true },
-            onListOrders: { showingOrders = true },
-            onCreatePedars: { showingCreatePedars = true },
-            onCreateMist: { showingCreateMist = true },
-            onListReports: { showingListReports = true },
-            onCreateMethane: { showingCreateMethane = true },
-            onListRequests: { showingListRequests = true }
-        )
+        Button {
+            showingMessagingMenu = true
+        } label: {
+            Image(systemName: "envelope.fill")
+                .font(.title2)
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .popover(isPresented: $showingMessagingMenu, arrowEdge: .top) {
+            MessagingPopoverMenu(
+                onChat: { showingMessagingMenu = false; presentSheet(.chat) },
+                onCreateOBO: { showingMessagingMenu = false; presentSheet(.createOBOOrder) },
+                onCreateFiveP: { showingMessagingMenu = false; presentSheet(.createFivePOrder) },
+                onListOrders: { showingMessagingMenu = false; presentSheet(.orders) },
+                onCreatePedars: { showingMessagingMenu = false; presentSheet(.createPedars) },
+                onCreateMist: { showingMessagingMenu = false; presentSheet(.createMist) },
+                onListReports: { showingMessagingMenu = false; presentSheet(.listReports) },
+                onCreateMethane: { showingMessagingMenu = false; presentSheet(.createMethane) },
+                onListRequests: { showingMessagingMenu = false; presentSheet(.listRequests) }
+            )
+        }
     }
 
     // MARK: - LAN Menu Button
 
     private var lanMenuButton: some View {
-        Menu {
-            // Contact Book
-            Button {
-                showingContacts = true
-            } label: {
-                Label("Contact Book", systemImage: "person.3.fill")
-            }
-
-            Divider()
-
-            // Seen Devices section
-            let visibleContacts = ContactsViewModel.shared.contacts.filter {
-                !ContactsViewModel.shared.blockedDeviceIds.contains($0.deviceId)
-            }
-
-            if visibleContacts.isEmpty {
-                Text("No devices seen")
-            } else {
-                ForEach(visibleContacts.prefix(10), id: \.deviceId) { contact in
-                    Button {
-                        // Could navigate to contact detail
-                    } label: {
-                        Label(
-                            contact.callsign ?? String(contact.deviceId.prefix(8)),
-                            systemImage: contact.isOnline ? "circle.fill" : "circle"
-                        )
-                    }
-                }
-
-                if visibleContacts.count > 10 {
-                    Button {
-                        showingContacts = true
-                    } label: {
-                        Text("View all \(visibleContacts.count) devices...")
-                    }
-                }
-            }
+        Button {
+            showingLanMenu = true
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "wifi")
                     .font(.title2)
                     .foregroundColor(.primary)
                     .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
 
                 // Badge for online contacts count
                 let onlineCount = ContactsViewModel.shared.contacts.filter { $0.isOnline }.count
@@ -1152,30 +1440,124 @@ public struct MainView: View {
                 }
             }
         }
+        .popover(isPresented: $showingLanMenu, arrowEdge: .top) {
+            lanMenuPopoverContent
+        }
+    }
+
+    private var lanMenuPopoverContent: some View {
+        let visibleContacts = ContactsViewModel.shared.contacts.filter {
+            !ContactsViewModel.shared.blockedDeviceIds.contains($0.deviceId)
+        }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                showingLanMenu = false
+                showingContacts = true
+            } label: {
+                Label("Contact Book", systemImage: "person.3.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            if visibleContacts.isEmpty {
+                Text("No devices seen")
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(visibleContacts.prefix(10), id: \.deviceId) { contact in
+                            Button {
+                                showingLanMenu = false
+                                // Could navigate to contact detail
+                            } label: {
+                                HStack {
+                                    Image(systemName: contact.isOnline ? "circle.fill" : "circle")
+                                        .foregroundColor(contact.isOnline ? .green : .gray)
+                                        .font(.caption)
+                                    Text(contact.callsign ?? String(contact.deviceId.prefix(8)))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if visibleContacts.count > 10 {
+                            Button {
+                                showingLanMenu = false
+                                showingContacts = true
+                            } label: {
+                                Text("View all \(visibleContacts.count) devices...")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 300)
+            }
+        }
+        .frame(width: 220)
+        .presentationCompactAdaptation(.popover)
     }
 
     // MARK: - Pins Menu Button
 
     private var pinsMenuButton: some View {
-        Menu {
+        Button {
+            showingPinsMenu = true
+        } label: {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.title2)
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .popover(isPresented: $showingPinsMenu, arrowEdge: .top) {
+            pinsMenuPopoverContent
+        }
+    }
+
+    private var pinsMenuPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
             // Synchronise pins
             Button {
-                // Request all pins from network
+                showingPinsMenu = false
                 TransportCoordinator.shared.requestAllPins(callsign: settingsVM.callsign)
             } label: {
                 Label("Synchronise", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.plain)
 
             // Reset all pins
-            Button(role: .destructive) {
+            Button {
+                showingPinsMenu = false
                 pinsVM.clearAllPins()
             } label: {
                 Label("Reset All Pins", systemImage: "trash")
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.plain)
 
             // Broadcast my position
             Button {
-                // Try mapVM.myPosition first (most reliable), then locationManager
+                showingPinsMenu = false
                 if let position = mapVM.myPosition ?? locationManager.currentCoordinate {
                     TransportCoordinator.shared.publishPosition(
                         callsign: settingsVM.callsign,
@@ -1191,7 +1573,11 @@ public struct MainView: View {
                 }
             } label: {
                 Label("Broadcast My Position", systemImage: "antenna.radiowaves.left.and.right")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.plain)
 
             Divider()
 
@@ -1199,69 +1585,104 @@ public struct MainView: View {
             if pinsVM.pins.isEmpty {
                 Text("No pins")
                     .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
             } else {
-                ForEach(pinsVM.pins, id: \.id) { pin in
-                    Button {
-                        // Center map on this pin
-                        mapVM.saveCameraPosition(
-                            lat: pin.latitude,
-                            lng: pin.longitude,
-                            zoom: max(mapVM.zoom, 15),
-                            bearing: mapVM.mapBearing
-                        )
-                        mapVM.setFollowMe(false)
-                    } label: {
-                        Label(
-                            pin.title.isEmpty ? pin.type.label : pin.title,
-                            systemImage: pin.type.sfSymbol
-                        )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(pinsVM.pins, id: \.id) { pin in
+                            Button {
+                                showingPinsMenu = false
+                                mapVM.saveCameraPosition(
+                                    lat: pin.latitude,
+                                    lng: pin.longitude,
+                                    zoom: max(mapVM.zoom, 15),
+                                    bearing: mapVM.mapBearing
+                                )
+                                mapVM.setFollowMe(false)
+                            } label: {
+                                Label(
+                                    pin.title.isEmpty ? pin.type.label : pin.title,
+                                    systemImage: pin.type.sfSymbol
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
+                .frame(maxHeight: 300)
             }
-        } label: {
-            Image(systemName: "mappin.and.ellipse")
-                .font(.title2)
-                .foregroundColor(.primary)
-                .frame(width: 44, height: 44)
         }
+        .frame(width: 240)
+        .presentationCompactAdaptation(.popover)
     }
 
     // MARK: - Settings Menu Button
 
     private var settingsMenuButton: some View {
-        Menu {
-            // My Profile
-            Button {
-                showingProfile = true
-            } label: {
-                Label("My Profile", systemImage: "person.crop.circle.fill")
-            }
-
-            // Settings
-            Button {
-                showingSettings = true
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-            }
-
-            Divider()
-
-            // About
-            Button {
-                showingAbout = true
-            } label: {
-                Label("About", systemImage: "info.circle")
-            }
-
-            // Feature or Bug report link
-            Link(destination: URL(string: "https://neriodefense.atlassian.net/servicedesk/customer/portal/1/group/3/create")!) {
-                Label("Feature or Bug", systemImage: "ladybug")
-            }
+        Button {
+            showingSettingsMenu = true
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.title2)
                 .foregroundColor(.primary)
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .popover(isPresented: $showingSettingsMenu, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    showingSettingsMenu = false
+                    showingProfile = true
+                } label: {
+                    Label("My Profile", systemImage: "person.crop.circle.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                Button {
+                    showingSettingsMenu = false
+                    showingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                Button {
+                    showingSettingsMenu = false
+                    showingAbout = true
+                } label: {
+                    Label("About", systemImage: "info.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                Link(destination: URL(string: "https://neriodefense.atlassian.net/servicedesk/customer/portal/1/group/3/create")!) {
+                    Label("Feature or Bug", systemImage: "ladybug")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 200)
+            .presentationCompactAdaptation(.popover)
         }
     }
 
@@ -1630,6 +2051,35 @@ public struct MainView: View {
         }
     }
 
+    /// Variant of handleCoordinateInput that dismisses using activeSheet
+    private func handleCoordinateInputForSheet(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        let components = trimmed.replacingOccurrences(of: ",", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { String($0) }
+
+        if components.count >= 2,
+           let lat = Double(components[0]),
+           let lon = Double(components[1]),
+           lat >= -90, lat <= 90,
+           lon >= -180, lon <= 180 {
+            let coordinate = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            mapVM.updateCrosshairPosition(coordinate)
+            mapVM.saveCameraPosition(
+                lat: coordinate.latitude,
+                lng: coordinate.longitude,
+                zoom: mapVM.zoom,
+                bearing: mapVM.mapBearing
+            )
+            withAnimation {
+                crosshairOffset = .zero
+            }
+            activeSheet = nil
+        } else {
+            coordinateInputError = "Invalid coordinates. Use format: 59.32941, 18.06857"
+        }
+    }
+
     private var crosshairGesture: some Gesture {
         DragGesture()
             .onChanged { value in
@@ -1831,7 +2281,8 @@ public struct MainView: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingOrders.count)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pendingReports.count)
         }
-        .allowsHitTesting(hasPendingNotifications)
+        // Don't block hits on the full GeometryReader - let taps pass through to UI below
+        .allowsHitTesting(false)
     }
 
     // MARK: - Long-Press Context Menu Overlay
@@ -2052,6 +2503,10 @@ struct MapViewRepresentable: UIViewRepresentable {
             action: #selector(Coordinator.handleLongPress(_:))
         )
         longPressGesture.minimumPressDuration = 0.5
+        longPressGesture.delegate = context.coordinator
+        // Don't cancel touches - let them pass through to SwiftUI views
+        longPressGesture.cancelsTouchesInView = false
+        longPressGesture.delaysTouchesBegan = false
         mapView.addGestureRecognizer(longPressGesture)
 
         // Add tap gesture recognizer for route planning
@@ -2060,6 +2515,11 @@ struct MapViewRepresentable: UIViewRepresentable {
             action: #selector(Coordinator.handleTap(_:))
         )
         tapGesture.require(toFail: longPressGesture)
+        tapGesture.delegate = context.coordinator
+        // Don't cancel touches - let them pass through to SwiftUI views
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delaysTouchesBegan = false
+        tapGesture.delaysTouchesEnded = false
         mapView.addGestureRecognizer(tapGesture)
 
         // Add pan gesture recognizer to detect user dragging
@@ -2069,6 +2529,14 @@ struct MapViewRepresentable: UIViewRepresentable {
         )
         panGesture.delegate = context.coordinator
         mapView.addGestureRecognizer(panGesture)
+
+        // Configure MKMapView's built-in gesture recognizers to respect UI overlay areas
+        // This is critical for SwiftUI Menu buttons to work on physical devices
+        for gestureRecognizer in mapView.gestureRecognizers ?? [] {
+            gestureRecognizer.delegate = context.coordinator
+            // Don't delay touches for built-in gestures either
+            gestureRecognizer.delaysTouchesBegan = false
+        }
 
         // Notify that map is ready
         onMapReady?(mapView)
@@ -2099,15 +2567,22 @@ struct MapViewRepresentable: UIViewRepresentable {
         updatePlanningOverlay(mapView)
 
         // Report user location screen position for crosshair line
+        // Use DispatchQueue.main.async to avoid modifying state during view update
         if let userLocation = mapView.userLocation.location?.coordinate {
             let screenPoint = mapView.convert(userLocation, toPointTo: mapView)
             if mapView.bounds.contains(screenPoint) {
-                onUserLocationScreenUpdate?(screenPoint)
+                DispatchQueue.main.async {
+                    self.onUserLocationScreenUpdate?(screenPoint)
+                }
             } else {
-                onUserLocationScreenUpdate?(nil)
+                DispatchQueue.main.async {
+                    self.onUserLocationScreenUpdate?(nil)
+                }
             }
         } else {
-            onUserLocationScreenUpdate?(nil)
+            DispatchQueue.main.async {
+                self.onUserLocationScreenUpdate?(nil)
+            }
         }
 
         // Follow mode - continuously center on user position (keeping current zoom)
@@ -2431,8 +2906,52 @@ struct MapViewRepresentable: UIViewRepresentable {
             parent.onTap?(coordinate)
         }
 
-        // Allow pan gesture to work simultaneously with map's built-in gestures
+        // Allow gestures to work simultaneously with map's built-in gestures
+        // Pan and pinch need to work together for smooth map interaction
+        // But tap gestures should NOT work simultaneously to avoid conflicts with SwiftUI
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // Allow pan and pinch gestures to work simultaneously (for map scrolling/zooming)
+            // Block tap gestures from simultaneous recognition to avoid SwiftUI Menu conflicts
+            if gestureRecognizer is UITapGestureRecognizer || otherGestureRecognizer is UITapGestureRecognizer {
+                return false
+            }
+            if gestureRecognizer is UILongPressGestureRecognizer || otherGestureRecognizer is UILongPressGestureRecognizer {
+                return false
+            }
+            return true
+        }
+
+        // Prevent map gestures from receiving touches in UI overlay areas
+        // This allows SwiftUI Menu buttons at the top of the screen to work properly
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let mapView = gestureRecognizer.view else { return true }
+
+            let location = touch.location(in: mapView)
+            let bounds = mapView.bounds
+
+            // Define UI overlay zones where map gestures should NOT receive touches
+            // Top 150 points - where menu buttons are located
+            let topOverlayHeight: CGFloat = 150
+            // Bottom 150 points - where HUD is located
+            let bottomOverlayHeight: CGFloat = 150
+            // Right side 100 points - where map control buttons are
+            let rightOverlayWidth: CGFloat = 100
+
+            // Check if touch is in top overlay area
+            if location.y < topOverlayHeight {
+                return false
+            }
+
+            // Check if touch is in bottom overlay area
+            if location.y > bounds.height - bottomOverlayHeight {
+                return false
+            }
+
+            // Check if touch is in right side overlay area
+            if location.x > bounds.width - rightOverlayWidth {
+                return false
+            }
+
             return true
         }
 
@@ -2852,6 +3371,162 @@ enum CombinedReportItem: Identifiable {
         case .pedars: return .blue
         case .mist: return .orange
         }
+    }
+}
+
+// MARK: - Messaging Popover Menu
+
+/// Custom popover menu for messaging - bypasses SwiftUI Menu gesture issues on physical devices
+struct MessagingPopoverMenu: View {
+    let onChat: () -> Void
+    let onCreateOBO: () -> Void
+    let onCreateFiveP: () -> Void
+    let onListOrders: () -> Void
+    let onCreatePedars: () -> Void
+    let onCreateMist: () -> Void
+    let onListReports: () -> Void
+    let onCreateMethane: () -> Void
+    let onListRequests: () -> Void
+
+    @State private var expandedSection: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Chat - direct action (first item)
+            Button(action: onChat) {
+                Label("Chat", systemImage: "message.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            // Orders section
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { expandedSection == "orders" },
+                    set: { expandedSection = $0 ? "orders" : nil }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button(action: onCreateOBO) {
+                        Label("Create OBO", systemImage: "plus")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onCreateFiveP) {
+                        Label("Create 5P", systemImage: "plus")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider().padding(.leading, 16)
+
+                    Button(action: onListOrders) {
+                        Label("List Orders", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } label: {
+                Label("Orders", systemImage: "doc.text.fill")
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Reports section
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { expandedSection == "reports" },
+                    set: { expandedSection = $0 ? "reports" : nil }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button(action: onCreatePedars) {
+                        Label("Create PEDARS", systemImage: "cross.case")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onCreateMist) {
+                        Label("Create MIST", systemImage: "staroflife")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider().padding(.leading, 16)
+
+                    Button(action: onListReports) {
+                        Label("List Reports", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } label: {
+                Label("Reports", systemImage: "doc.plaintext.fill")
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Requests section
+            DisclosureGroup(
+                isExpanded: Binding(
+                    get: { expandedSection == "requests" },
+                    set: { expandedSection = $0 ? "requests" : nil }
+                )
+            ) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Button(action: onCreateMethane) {
+                        Label("Create METHANE", systemImage: "exclamationmark.triangle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider().padding(.leading, 16)
+
+                    Button(action: onListRequests) {
+                        Label("List Requests", systemImage: "list.bullet")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } label: {
+                Label("Requests", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 220)
+        .presentationCompactAdaptation(.popover)
     }
 }
 

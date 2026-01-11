@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Messaging Menu Button
 
 /// Messaging menu button with hierarchical access to Chat, Orders, Reports, and Requests
+/// Uses SwiftUI Menu with nested submenus for proper menu UI experience
 public struct MessagingMenuButton: View {
     let onOpenChat: () -> Void
     let onCreateOBOOrder: () -> Void
@@ -38,29 +39,24 @@ public struct MessagingMenuButton: View {
 
     public var body: some View {
         Menu {
-            // Chat
             Button {
                 onOpenChat()
             } label: {
                 Label("Chat", systemImage: "message.fill")
             }
 
-            // Orders submenu
             Menu {
                 Button {
                     onCreateOBOOrder()
                 } label: {
                     Label("Create OBO", systemImage: "plus")
                 }
-
                 Button {
                     onCreateFivePOrder()
                 } label: {
                     Label("Create 5P", systemImage: "plus")
                 }
-
                 Divider()
-
                 Button {
                     onListOrders()
                 } label: {
@@ -70,41 +66,34 @@ public struct MessagingMenuButton: View {
                 Label("Orders", systemImage: "doc.text.fill")
             }
 
-            // Reports submenu
             Menu {
                 Button {
                     onCreatePedars()
                 } label: {
                     Label("Create PEDARS", systemImage: "plus")
                 }
-
                 Button {
                     onCreateMist()
                 } label: {
                     Label("Create MIST", systemImage: "plus")
                 }
-
                 Divider()
-
                 Button {
                     onListReports()
                 } label: {
                     Label("List Reports", systemImage: "list.bullet")
                 }
             } label: {
-                Label("Reports", systemImage: "doc.plaintext.fill")
+                Label("Reports", systemImage: "doc.richtext.fill")
             }
 
-            // Requests submenu
             Menu {
                 Button {
                     onCreateMethane()
                 } label: {
                     Label("Create METHANE", systemImage: "plus")
                 }
-
                 Divider()
-
                 Button {
                     onListRequests()
                 } label: {
@@ -118,6 +107,7 @@ public struct MessagingMenuButton: View {
                 .font(.title2)
                 .foregroundColor(.primary)
                 .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
     }
 }
